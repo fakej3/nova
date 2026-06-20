@@ -698,6 +698,13 @@ input, textarea, select {
 
 /* ── Responsive ─────────────────────────────────────────────── */
 
+/* Fix #1 (Critical): Use dynamic viewport height where supported.
+   iOS Safari's 100vh includes the hidden address bar, causing overflow.
+   100dvh shrinks as the browser chrome appears, keeping the app contained. */
+@supports (height: 100dvh) {
+  html, body, #app { height: 100dvh; }
+}
+
 /* Compact layout for smaller laptops */
 @media (max-height: 768px) {
   #top-bar { height: 48px; }
@@ -787,20 +794,31 @@ input, textarea, select {
     right: 16px;
   }
 
+  /* Fix #2 (Critical): Offset flex-center to account for fixed top bar (60px)
+     and bottom stack — nav (~56px) + input bar (~64px) = ~120px.
+     Without this the orb centers in the full viewport, appearing too high. */
+  #app {
+    padding-top: 60px;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+  }
+
   /* Orb scales down on small screens */
   #orb-container {
     transform: scale(0.72);
     transform-origin: center center;
   }
 
+  /* Fix #4 (Major): Cap canvas at actual viewport width.
+     380px overflows 375px-wide iPhones by 5px on each side. */
   #orb-hud-canvas {
-    width: 380px;
-    height: 380px;
+    width: min(380px, 100vw);
+    height: min(380px, 100vw);
   }
 
-  /* Install indicator above input bar + bottom nav */
+  /* Fix #5 (Major): Raise install indicator — was only 4px above input bar.
+     Input bar top ≈ 116px from bottom; badge now has 8px clearance. */
   #install-indicator {
-    bottom: calc(120px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(144px + env(safe-area-inset-bottom, 0px));
     right: 12px;
   }
 
@@ -833,8 +851,16 @@ input, textarea, select {
     padding: 16px 16px 12px;
   }
 
+  /* Fix #3 (Critical): Increase close button touch target to 44px minimum. */
+  #panel-close {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+  }
+
+  /* Fix #12 (Minor): Extra bottom padding so last card isn't flush to edge. */
   #panel-content {
-    padding: 12px;
+    padding: 12px 12px 28px;
   }
 
   /* System bar — hide on very small screens to avoid clutter */
@@ -843,6 +869,15 @@ input, textarea, select {
   /* Clock — reduce size */
   #clock-time { font-size: 16px; }
   #clock-date { font-size: 9px; }
+
+  /* Fix #11 (Minor): Allow greeting to wrap on narrow screens instead of
+     overflowing the viewport or being clipped. */
+  #nova-greeting {
+    white-space: normal;
+    text-align: center;
+    width: calc(100vw - 160px);
+    font-size: 9px;
+  }
 }
 
 /* ── Tablet layout (641px – 900px) ──────────────────────────── */

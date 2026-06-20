@@ -149,8 +149,10 @@ export function renderInstallSection() {
     return;
   }
 
-  // Prompt not yet available — show manual instructions
+  // Prompt not available — show manual instructions immediately
   container.innerHTML = _htmlManualInstructions();
+  // If the prompt arrives later while settings is open, update automatically
+  window.addEventListener('beforeinstallprompt', () => renderInstallSection(), { once: true });
 }
 
 // ── Banner helpers ─────────────────────────────────────────────

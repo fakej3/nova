@@ -24,6 +24,8 @@ const ASSETS = [
   './js/modules/tasks.js',
   './js/ui/mouse.js',
   './js/ui/hud.js',
+  './assets/icons/icon-192.png',
+  './assets/icons/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {

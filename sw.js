@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-v1';
+const CACHE_NAME = 'nova-v2';
 
 const ASSETS = [
   './',
@@ -22,6 +22,8 @@ const ASSETS = [
   './js/ui/install.js',
   './js/modules/notes.js',
   './js/modules/tasks.js',
+  './js/ui/mouse.js',
+  './js/ui/hud.js',
 ];
 
 self.addEventListener('install', (event) => {

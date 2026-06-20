@@ -16,6 +16,8 @@ import { initToasts, showToast }    from '../ui/toast.js';
 import { initInstallPrompt }        from '../ui/install.js';
 import { initNotes, renderNotesPanel } from '../modules/notes.js';
 import { initTasks, renderTasksPanel } from '../modules/tasks.js';
+import { initMouse }                   from '../ui/mouse.js';
+import { initHud }                     from '../ui/hud.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -49,6 +51,10 @@ async function boot() {
 
     // 8. Start particles
     initParticles();
+
+    // 8b. Mouse parallax + HUD (after DOM is ready, before modules)
+    initMouse();
+    await initHud();
 
     // 9. Init modules
     await initNotes();

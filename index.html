@@ -28,6 +28,23 @@
     <!-- Ambient particle layer -->
     <canvas id="particles-canvas" aria-hidden="true"></canvas>
 
+    <!-- Screen-level HUD overlay: corners, scan line, system bar, greeting -->
+    <div id="hud-overlay" aria-hidden="true">
+      <div class="hud-corner corner-tl"></div>
+      <div class="hud-corner corner-tr"></div>
+      <div class="hud-corner corner-bl"></div>
+      <div class="hud-corner corner-br"></div>
+      <div id="scan-line"></div>
+      <div id="nova-greeting"></div>
+      <div id="system-bar">
+        <span id="sys-notes">0 NOTES</span>
+        <span class="sys-sep">·</span>
+        <span id="sys-tasks">0 PENDING</span>
+        <span class="sys-sep">·</span>
+        <span id="sys-uptime">UPTIME 0:00</span>
+      </div>
+    </div>
+
     <!-- Top bar -->
     <header id="top-bar" aria-label="Status bar">
       <div id="clock-display" aria-live="polite" aria-label="Current time">
@@ -55,6 +72,8 @@
 
     <!-- Main stage: orb -->
     <main id="main-stage" aria-label="NOVA interface">
+      <!-- Orbital HUD canvas — drawn around the orb each frame -->
+      <canvas id="orb-hud-canvas" aria-hidden="true"></canvas>
       <div id="orb-container" class="state-idle" aria-label="NOVA orb" role="img">
         <div id="orb-field"></div>
         <div id="orb-ring-3"></div>

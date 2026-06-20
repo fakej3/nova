@@ -546,6 +546,124 @@ input, textarea, select {
   flex-shrink: 0;
 }
 
+/* ── Orb HUD Canvas ─────────────────────────────────────────── */
+
+#orb-hud-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 520px;
+  height: 520px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 4;
+  opacity: 1;
+}
+
+/* ── HUD Overlay ────────────────────────────────────────────── */
+
+#hud-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* Corner brackets */
+.hud-corner {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  opacity: 0.3;
+  animation: corner-breathe 5s ease-in-out infinite;
+}
+
+.corner-tl { top: 18px;    left: 18px;    border-top: 1px solid var(--accent-primary); border-left:  1px solid var(--accent-primary); }
+.corner-tr { top: 18px;    right: 18px;   border-top: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); animation-delay: 1.25s; }
+.corner-bl { bottom: 18px; left: 18px;    border-bottom: 1px solid var(--accent-primary); border-left:  1px solid var(--accent-primary); animation-delay: 2.5s; }
+.corner-br { bottom: 18px; right: 18px;   border-bottom: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); animation-delay: 3.75s; }
+
+@keyframes corner-breathe {
+  0%, 100% { opacity: 0.22; }
+  50%       { opacity: 0.42; }
+}
+
+/* Screen scan line — sweeps top to bottom every 12s */
+#scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(var(--orb-color-rgb), 0.12) 20%,
+    rgba(var(--orb-color-rgb), 0.25) 50%,
+    rgba(var(--orb-color-rgb), 0.12) 80%,
+    transparent 100%
+  );
+  animation: scan-sweep 12s linear infinite;
+  animation-delay: 3s;
+}
+
+@keyframes scan-sweep {
+  0%   { top: -1px;   opacity: 0; }
+  4%   { opacity: 1; }
+  96%  { opacity: 1; }
+  100% { top: 100vh;  opacity: 0; }
+}
+
+/* Contextual greeting */
+#nova-greeting {
+  position: absolute;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  opacity: 0;
+  animation: greeting-in 1s ease forwards;
+  animation-delay: 1.2s;
+  text-transform: uppercase;
+}
+
+@keyframes greeting-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 0.55; transform: translateX(-50%) translateY(0); }
+}
+
+/* System bar — bottom left */
+#system-bar {
+  position: absolute;
+  bottom: 22px;
+  left: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 0;
+  animation: sysbar-in 1s ease forwards;
+  animation-delay: 1.5s;
+}
+
+@keyframes sysbar-in {
+  from { opacity: 0; }
+  to   { opacity: 0.4; }
+}
+
+.sys-sep {
+  opacity: 0.4;
+  font-size: 8px;
+}
+
 /* ── Utilities ──────────────────────────────────────────────── */
 
 .sr-only {

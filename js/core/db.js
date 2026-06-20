@@ -10,42 +10,74 @@ const DB_VERSION = 1;
 
 let _db = null;
 
+// ── Low-level helpers ─────────────────────────────────────────
+
+function reqToPromise(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = (e) => resolve(e.target.result ?? null);
+    req.onerror   = (e) => reject(e.target.error);
+  });
+}
+
+// Opens a transaction on one store, calls fn(store), returns promise of fn's result.
+function storeReq(storeName, mode, fn) {
+  return getDB().then((db) => {
+    const store = db.transaction(storeName, mode).objectStore(storeName);
+    return fn(store);
+  });
+}
+
+// Wraps a readwrite transaction where fn may issue multiple requests.
+// Resolves when the transaction completes, with the value returned by fn().
+function txWrite(storeName, fn) {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, 'readwrite');
+    let result;
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror    = (e) => reject(e.target.error);
+    transaction.onabort    = (e) => reject(e.target.error ?? new Error('Transaction aborted'));
+    try {
+      result = fn(transaction.objectStore(storeName), transaction);
+    } catch (err) {
+      reject(err);
+    }
+  }));
+}
+
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
     req.onupgradeneeded = (event) => {
-      const db = event.target.result;
+      const db         = event.target.result;
+      const oldVersion = event.oldVersion;
 
-      // ── notes ──────────────────────────────────────────────
-      if (!db.objectStoreNames.contains('notes')) {
+      // Migration ladder — add a new "if (oldVersion < N)" block for each version bump.
+      if (oldVersion < 1) {
+        // ── notes ───────────────────────────────────────────
         const notes = db.createObjectStore('notes', { keyPath: 'id' });
-        notes.createIndex('createdAt',  'createdAt',  { unique: false });
-        notes.createIndex('updatedAt',  'updatedAt',  { unique: false });
-        notes.createIndex('pinned',     'pinned',     { unique: false });
-      }
+        notes.createIndex('createdAt', 'createdAt', { unique: false });
+        notes.createIndex('updatedAt', 'updatedAt', { unique: false });
+        notes.createIndex('pinned',    'pinned',    { unique: false });
 
-      // ── tasks ──────────────────────────────────────────────
-      if (!db.objectStoreNames.contains('tasks')) {
+        // ── tasks ───────────────────────────────────────────
         const tasks = db.createObjectStore('tasks', { keyPath: 'id' });
         tasks.createIndex('status',      'status',      { unique: false });
         tasks.createIndex('priority',    'priority',    { unique: false });
         tasks.createIndex('createdAt',   'createdAt',   { unique: false });
         tasks.createIndex('completedAt', 'completedAt', { unique: false });
         tasks.createIndex('dueDate',     'dueDate',     { unique: false });
-      }
 
-      // ── events ─────────────────────────────────────────────
-      if (!db.objectStoreNames.contains('events')) {
+        // ── events ──────────────────────────────────────────
         const events = db.createObjectStore('events', { keyPath: 'id' });
         events.createIndex('timestamp', 'timestamp', { unique: false });
         events.createIndex('type',      'type',      { unique: false });
-      }
 
-      // ── settings ───────────────────────────────────────────
-      if (!db.objectStoreNames.contains('settings')) {
+        // ── settings ────────────────────────────────────────
         db.createObjectStore('settings', { keyPath: 'key' });
       }
+
+      // if (oldVersion < 2) { /* add Phase 2 stores here */ }
     };
 
     req.onsuccess  = (e) => { _db = e.target.result; resolve(_db); };
@@ -57,32 +89,6 @@ function openDB() {
 function getDB() {
   if (_db) return Promise.resolve(_db);
   return openDB();
-}
-
-function tx(storeName, mode, fn) {
-  return getDB().then((db) => {
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(storeName, mode);
-      const store       = transaction.objectStore(storeName);
-      let result;
-      try {
-        result = fn(store, transaction);
-      } catch (err) {
-        reject(err);
-        return;
-      }
-      transaction.oncomplete = () => resolve(result instanceof IDBRequest ? result.result : result);
-      transaction.onerror    = (e) => reject(e.target.error);
-      transaction.onabort    = (e) => reject(e.target.error);
-    });
-  });
-}
-
-function reqToPromise(req) {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror   = (e) => reject(e.target.error);
-  });
 }
 
 function newId() {
@@ -108,71 +114,47 @@ const notes = {
       createdAt: ts,
       updatedAt: ts,
     };
-    await tx('notes', 'readwrite', (store) => store.add(note));
+    await storeReq('notes', 'readwrite', (store) => reqToPromise(store.add(note)));
     return id;
   },
 
   async get(id) {
-    return tx('notes', 'readonly', (store) => {
-      const req = store.get(id);
-      return new Promise((res, rej) => {
-        req.onsuccess = (e) => res(e.target.result ?? null);
-        req.onerror   = (e) => rej(e.target.error);
-      });
-    });
+    return storeReq('notes', 'readonly', (store) => reqToPromise(store.get(id)));
   },
 
   async getAll() {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const tx   = db.transaction('notes', 'readonly');
-        const req  = tx.objectStore('notes').getAll();
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('notes', 'readonly', (store) => reqToPromise(store.getAll()));
   },
 
   async update(id, changes) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction('notes', 'readwrite');
-        const store       = transaction.objectStore('notes');
-        const getReq      = store.get(id);
-        getReq.onsuccess  = (e) => {
-          const existing = e.target.result;
-          if (!existing) { reject(new Error(`Note ${id} not found`)); return; }
-          const updated = { ...existing, ...changes, id, updatedAt: now() };
-          const putReq  = store.put(updated);
-          putReq.onsuccess  = () => resolve();
-          putReq.onerror    = (e2) => reject(e2.target.error);
-        };
-        getReq.onerror = (e) => reject(e.target.error);
+    return txWrite('notes', (store) => {
+      return reqToPromise(store.get(id)).then((existing) => {
+        if (!existing) throw new Error(`Note ${id} not found`);
+        return reqToPromise(store.put({ ...existing, ...changes, id, updatedAt: now() }));
       });
     });
   },
 
   async delete(id) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction('notes', 'readwrite');
-        const req         = transaction.objectStore('notes').delete(id);
-        req.onsuccess  = () => resolve();
-        req.onerror    = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('notes', 'readwrite', (store) => reqToPromise(store.delete(id)));
   },
 
-  async search(query) {
+  async search(query, limit = 500) {
     const all = await notes.getAll();
     if (!query || !query.trim()) return all;
     const q = query.trim().toLowerCase();
-    return all.filter(
-      (n) =>
+    const results = [];
+    for (const n of all) {
+      if (results.length >= limit) break;
+      if (
         n.title.toLowerCase().includes(q) ||
         n.content.toLowerCase().includes(q) ||
         n.tags.some((t) => t.toLowerCase().includes(q))
-    );
+      ) {
+        results.push(n);
+      }
+    }
+    return results;
   },
 };
 
@@ -193,63 +175,38 @@ const tasks = {
       updatedAt:   ts,
       completedAt: null,
     };
-    await tx('tasks', 'readwrite', (store) => store.add(task));
+    await storeReq('tasks', 'readwrite', (store) => reqToPromise(store.add(task)));
     return id;
   },
 
   async get(id) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('tasks', 'readonly').objectStore('tasks').get(id);
-        req.onsuccess = (e) => resolve(e.target.result ?? null);
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('tasks', 'readonly', (store) => reqToPromise(store.get(id)));
   },
 
   async getAll() {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('tasks', 'readonly').objectStore('tasks').getAll();
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror   = (e) => reject(e.target.error);
-      });
+    return storeReq('tasks', 'readonly', (store) => reqToPromise(store.getAll()));
+  },
+
+  // Uses the status index instead of full-table filter.
+  async getByStatus(status) {
+    if (status === 'all') return tasks.getAll();
+    return storeReq('tasks', 'readonly', (store) => {
+      const index = store.index('status');
+      return reqToPromise(index.getAll(IDBKeyRange.only(status)));
     });
   },
 
-  async getByStatus(status) {
-    const all = await tasks.getAll();
-    if (status === 'all') return all;
-    return all.filter((t) => t.status === status);
-  },
-
   async update(id, changes) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const transaction = db.transaction('tasks', 'readwrite');
-        const store       = transaction.objectStore('tasks');
-        const getReq      = store.get(id);
-        getReq.onsuccess  = (e) => {
-          const existing = e.target.result;
-          if (!existing) { reject(new Error(`Task ${id} not found`)); return; }
-          const updated = { ...existing, ...changes, id, updatedAt: now() };
-          const putReq  = store.put(updated);
-          putReq.onsuccess = () => resolve();
-          putReq.onerror   = (e2) => reject(e2.target.error);
-        };
-        getReq.onerror = (e) => reject(e.target.error);
+    return txWrite('tasks', (store) => {
+      return reqToPromise(store.get(id)).then((existing) => {
+        if (!existing) throw new Error(`Task ${id} not found`);
+        return reqToPromise(store.put({ ...existing, ...changes, id, updatedAt: now() }));
       });
     });
   },
 
   async delete(id) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('tasks', 'readwrite').objectStore('tasks').delete(id);
-        req.onsuccess = () => resolve();
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('tasks', 'readwrite', (store) => reqToPromise(store.delete(id)));
   },
 };
 
@@ -266,25 +223,32 @@ const events = {
       relatedTable: data.relatedTable ?? null,
       timestamp:    now(),
     };
-    await tx('events', 'readwrite', (store) => store.add(event));
+    await storeReq('events', 'readwrite', (store) => reqToPromise(store.add(event)));
     return id;
   },
 
   async getAll() {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('events', 'readonly').objectStore('events').getAll();
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('events', 'readonly', (store) => reqToPromise(store.getAll()));
   },
 
+  // Uses timestamp index with a reverse cursor — O(limit) instead of O(total).
   async getRecent(limit = 50) {
-    const all = await events.getAll();
-    return all
-      .sort((a, b) => (a.timestamp > b.timestamp ? -1 : 1))
-      .slice(0, limit);
+    return getDB().then((db) => new Promise((resolve, reject) => {
+      const store   = db.transaction('events', 'readonly').objectStore('events');
+      const index   = store.index('timestamp');
+      const results = [];
+      const req     = index.openCursor(null, 'prev');
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor || results.length >= limit) {
+          resolve(results);
+          return;
+        }
+        results.push(cursor.value);
+        cursor.continue();
+      };
+      req.onerror = (e) => reject(e.target.error);
+    }));
   },
 };
 
@@ -292,33 +256,19 @@ const events = {
 
 const settings = {
   async get(key) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('settings', 'readonly').objectStore('settings').get(key);
-        req.onsuccess = (e) => resolve(e.target.result?.value ?? null);
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('settings', 'readonly', (store) =>
+      reqToPromise(store.get(key)).then((row) => row?.value ?? null)
+    );
   },
 
   async set(key, value) {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('settings', 'readwrite').objectStore('settings').put({ key, value });
-        req.onsuccess = () => resolve();
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('settings', 'readwrite', (store) =>
+      reqToPromise(store.put({ key, value }))
+    );
   },
 
   async getAll() {
-    return getDB().then((db) => {
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('settings', 'readonly').objectStore('settings').getAll();
-        req.onsuccess = (e) => resolve(e.target.result);
-        req.onerror   = (e) => reject(e.target.error);
-      });
-    });
+    return storeReq('settings', 'readonly', (store) => reqToPromise(store.getAll()));
   },
 };
 

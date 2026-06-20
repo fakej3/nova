@@ -8,6 +8,7 @@ import { Bus, EVENTS } from '../core/bus.js';
 import { logEvent, EVENT_TYPES } from '../services/events.js';
 import { showToast } from '../ui/toast.js';
 import { pulseOrb } from '../ui/orb.js';
+import { escHtml } from '../core/utils.js';
 
 let _panelContent   = null;
 let _activeFilter   = 'all';  // all | pending | in_progress | completed
@@ -173,8 +174,8 @@ function _taskCard(task) {
         tabindex="0"
       ></div>
       <div class="task-body">
-        <div class="task-title ${isComplete ? 'completed' : ''}">${_escHtml(task.title)}</div>
-        ${task.description ? `<div class="task-desc">${_escHtml(task.description)}</div>` : ''}
+        <div class="task-title ${isComplete ? 'completed' : ''}">${escHtml(task.title)}</div>
+        ${task.description ? `<div class="task-desc">${escHtml(task.description)}</div>` : ''}
         <div class="task-meta">
           <span class="priority-badge priority-${task.priority}">${priority}</span>
           <span class="status-badge status-${task.status.replace('_', '-')}">${_statusLabel(task.status)}</span>
@@ -202,7 +203,7 @@ async function _renderEditor(id) {
           id="task-title"
           class="form-input"
           placeholder="What needs to be done?"
-          value="${_escHtml(task?.title ?? '')}"
+          value="${escHtml(task?.title ?? '')}"
           maxlength="200"
           required
           autocomplete="off"
@@ -215,7 +216,7 @@ async function _renderEditor(id) {
           class="form-textarea"
           placeholder="Additional details..."
           rows="4"
-        >${_escHtml(task?.description ?? '')}</textarea>
+        >${escHtml(task?.description ?? '')}</textarea>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
@@ -289,7 +290,13 @@ async function _handleSave(id) {
   }
 
   if (id) {
+    const prev = await DB.tasks.get(id);
     await updateTask(id, changes);
+    // Emit TASK_COMPLETED if status changed to completed via the editor form
+    if (status === 'completed' && prev?.status !== 'completed') {
+      Bus.emit(EVENTS.TASK_COMPLETED, { id });
+      pulseOrb();
+    }
   } else {
     await createTask(title, description, priority, dueDate);
   }
@@ -334,11 +341,3 @@ function _dueDateLabel(dateStr) {
   return `Due ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
 }
 
-function _escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}

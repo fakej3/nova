@@ -7,6 +7,7 @@
 import { DB }                       from './db.js';
 import { State }                    from './state.js';
 import { Bus, EVENTS }              from './bus.js';
+import { escHtml }                  from './utils.js';
 import { logEvent, EVENT_TYPES }    from '../services/events.js';
 import { initOrb, setOrbState }     from '../ui/orb.js';
 import { initThemeEngine, applyTheme, setAutoTheme } from '../ui/theme.js';
@@ -66,6 +67,13 @@ async function boot() {
     _wireInputBar();
     _wireSettings();
     _wireConnectivity();
+
+    // Refresh events panel if it's open when a new event is logged
+    Bus.on(EVENTS.EVENT_LOGGED, () => {
+      if (State.get('activeView') === 'events' && State.get('panelOpen')) {
+        _renderEventsPanel();
+      }
+    });
 
     // 11. PWA install prompt
     await initInstallPrompt();
@@ -224,7 +232,7 @@ async function _renderEventsPanel() {
         <div class="event-item">
           <div class="event-dot" aria-hidden="true"></div>
           <div class="event-body">
-            <div class="event-desc">${_escHtml(ev.description)}</div>
+            <div class="event-desc">${escHtml(ev.description)}</div>
             <div class="event-time">${time}</div>
           </div>
         </div>
@@ -251,13 +259,6 @@ function _formatEventTime(iso) {
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
-
-// Refresh events panel if it's open when a new event is logged
-Bus.on(EVENTS.EVENT_LOGGED, () => {
-  if (State.get('activeView') === 'events' && State.get('panelOpen')) {
-    _renderEventsPanel();
-  }
-});
 
 // ── Input Bar ─────────────────────────────────────────────────
 
@@ -399,16 +400,6 @@ function _wireConnectivity() {
   // Set initial state
   State.set('connectivity', navigator.onLine);
   if (dot) dot.classList.toggle('offline', !navigator.onLine);
-}
-
-// ── Helpers ───────────────────────────────────────────────────
-
-function _escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 // ── Run ───────────────────────────────────────────────────────

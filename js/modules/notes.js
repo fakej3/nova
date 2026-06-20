@@ -8,6 +8,7 @@ import { Bus, EVENTS } from '../core/bus.js';
 import { logEvent, EVENT_TYPES } from '../services/events.js';
 import { showToast } from '../ui/toast.js';
 import { pulseOrb } from '../ui/orb.js';
+import { escHtml } from '../core/utils.js';
 
 let _panelContent = null;
 let _currentView  = 'list'; // list | editor
@@ -80,7 +81,7 @@ async function _renderList(query = '') {
         class="search-input"
         id="notes-search"
         placeholder="Search notes..."
-        value="${_escHtml(query)}"
+        value="${escHtml(query)}"
         aria-label="Search notes"
       />
     </div>
@@ -109,17 +110,17 @@ async function _renderList(query = '') {
 function _noteCard(note) {
   const date    = _formatDate(note.updatedAt);
   const preview = note.content.replace(/\n/g, ' ').slice(0, 120);
-  const tags    = note.tags.slice(0, 3).map((t) => `<span class="tag">${_escHtml(t)}</span>`).join('');
+  const tags    = note.tags.slice(0, 3).map((t) => `<span class="tag">${escHtml(t)}</span>`).join('');
 
   return `
     <div class="card note-card card-appear ${note.pinned ? 'pinned' : ''}"
          data-id="${note.id}"
          tabindex="0"
          role="button"
-         aria-label="Note: ${_escHtml(note.title || 'Untitled')}"
+         aria-label="Note: ${escHtml(note.title || 'Untitled')}"
     >
-      <div class="card-title">${_escHtml(note.title || 'Untitled')}</div>
-      ${preview ? `<div class="card-preview">${_escHtml(preview)}</div>` : ''}
+      <div class="card-title">${escHtml(note.title || 'Untitled')}</div>
+      ${preview ? `<div class="card-preview">${escHtml(preview)}</div>` : ''}
       <div class="card-meta">
         <span class="card-date">${date}</span>
         ${tags}
@@ -146,7 +147,7 @@ async function _renderEditor(id) {
           id="note-title"
           class="form-input"
           placeholder="Note title..."
-          value="${_escHtml(note?.title ?? '')}"
+          value="${escHtml(note?.title ?? '')}"
           maxlength="200"
           autocomplete="off"
         />
@@ -159,7 +160,7 @@ async function _renderEditor(id) {
           placeholder="Start writing..."
           rows="8"
           style="min-height:160px"
-        >${_escHtml(note?.content ?? '')}</textarea>
+        >${escHtml(note?.content ?? '')}</textarea>
       </div>
       <div class="form-group">
         <label class="form-label" for="note-tags">Tags <span style="font-weight:400;text-transform:none">(comma-separated)</span></label>
@@ -168,7 +169,7 @@ async function _renderEditor(id) {
           id="note-tags"
           class="form-input"
           placeholder="work, idea, personal..."
-          value="${_escHtml((note?.tags ?? []).join(', '))}"
+          value="${escHtml((note?.tags ?? []).join(', '))}"
           autocomplete="off"
         />
       </div>
@@ -243,11 +244,3 @@ function _formatDate(iso) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function _escHtml(str) {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}

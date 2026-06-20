@@ -57,12 +57,12 @@ export function applyTheme(name, isManual = true) {
   }
 
   State.set('theme', name);
-  DB.settings.set('theme', name);
+  DB.settings.set('theme', name).catch((e) => console.error('[Theme] Failed to persist theme:', e));
 
   if (isManual) {
     const ts = new Date().toISOString();
     State.set('themeManualAt', ts);
-    DB.settings.set('themeManualAt', ts);
+    DB.settings.set('themeManualAt', ts).catch((e) => console.error('[Theme] Failed to persist themeManualAt:', e));
     logEvent(EVENT_TYPES.THEME_CHANGED, `Theme changed to ${name}`);
   }
 

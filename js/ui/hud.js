@@ -143,6 +143,8 @@ async function _refreshCounts() {
 // ── Main loop ─────────────────────────────────────────────────
 
 function _loop() {
+  if (!_canvas || !_ctx) return;
+
   _frame++;
 
   // Advance angles

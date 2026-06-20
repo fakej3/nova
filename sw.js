@@ -1,7 +1,6 @@
-const CACHE_NAME = 'nova-v3';
+const CACHE_NAME = 'nova-v4';
 
 const ASSETS = [
-  './',
   './index.html',
   './manifest.json',
   './css/core.css',
@@ -13,6 +12,7 @@ const ASSETS = [
   './js/core/db.js',
   './js/core/state.js',
   './js/core/bus.js',
+  './js/core/utils.js',
   './js/services/events.js',
   './js/ui/orb.js',
   './js/ui/theme.js',
@@ -70,7 +70,7 @@ self.addEventListener('fetch', (event) => {
           return response;
         }
         const toCache = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, toCache));
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, toCache)).catch(() => {});
         return response;
       });
     })

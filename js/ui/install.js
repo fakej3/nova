@@ -33,6 +33,7 @@ const WARN = (...args) => console.warn('[NOVA Install]', ...args);
 // ── Init ───────────────────────────────────────────────────────
 
 export async function initInstallPrompt() {
+  clearTimeout(_diagTimer);
   LOG('Initializing install system');
   LOG('HTTPS:', _diag.https);
   LOG('SW supported:', _diag.swSupported);

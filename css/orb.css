@@ -573,6 +573,58 @@
   100% { transform: scale(1); }
 }
 
+/* ============================================================
+   Phase G — Depth & Parallax enhancements
+   Adds far-field nebula haze, mid-depth halo on ring-3,
+   and a foreground diffraction edge on the inner ring.
+   No new DOM elements — CSS only.
+   ============================================================ */
+
+/* Deep background nebula behind orb-field */
+#orb-field::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(var(--orb-color-rgb), 0.038) 0%,
+    rgba(var(--orb-color-rgb), 0.012) 45%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Mid-depth atmospheric band around ring-3 */
+#orb-ring-3::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--orb-color-rgb), 0.04);
+  pointer-events: none;
+}
+
+/* Foreground diffraction ring — just outside orb-ring-1 */
+#orb-ring-2::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 0.5px solid rgba(var(--orb-color-rgb), 0.06);
+  box-shadow: 0 0 14px rgba(var(--orb-color-rgb), 0.06);
+  pointer-events: none;
+}
+
+/* Enhanced inner ring — soft glow edge */
+#orb-ring-1 {
+  box-shadow:
+    0 0 10px  rgba(var(--orb-color-rgb), 0.22),
+    0 0 24px  rgba(var(--orb-color-rgb), 0.08),
+    0 0 48px  rgba(var(--orb-color-rgb), 0.04),
+    inset 0 0 10px rgba(var(--orb-color-rgb), 0.06);
+}
+
 /* ── Reduced motion ─────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

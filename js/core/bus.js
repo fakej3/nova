@@ -65,4 +65,7 @@ export const EVENTS = {
 
   // Orb
   ORB_STATE_CHANGED: 'orb:state_changed',
+
+  // Awareness (Phase A)
+  AWARENESS_CHANGED: 'awareness:changed',
 };

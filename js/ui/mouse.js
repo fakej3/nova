@@ -45,8 +45,9 @@ export function initMouse() {
   window.addEventListener('resize', _cacheRect, { passive: true });
   window.addEventListener('scroll', _cacheRect, { passive: true });
 
-  document.addEventListener('mousemove', _onMove, { passive: true });
-  document.addEventListener('mouseleave', _onLeave, { passive: true });
+  document.addEventListener('mousemove',  _onMove,       { passive: true });
+  document.addEventListener('mouseleave', _onLeave,      { passive: true });
+  document.addEventListener('touchmove',  _onTouchMove,  { passive: true });
 
   // Respect reduced motion preference
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -75,6 +76,16 @@ function _onMove(e) {
 function _onLeave() {
   targetX = 0;
   targetY = 0;
+}
+
+function _onTouchMove(e) {
+  if (!_orbRect || !_active) return;
+  const t  = e.touches[0];
+  if (!t) return;
+  const cx = _orbRect.left + _orbRect.width  / 2;
+  const cy = _orbRect.top  + _orbRect.height / 2;
+  targetX  = Math.max(-1, Math.min(1, (t.clientX - cx) / (window.innerWidth  * 0.45)));
+  targetY  = Math.max(-1, Math.min(1, (t.clientY - cy) / (window.innerHeight * 0.45)));
 }
 
 function _tick() {

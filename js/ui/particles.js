@@ -14,7 +14,8 @@
 
 import { Bus, EVENTS } from '../core/bus.js';
 
-const PARTICLE_COUNT  = 70;
+const _isMobile       = window.innerWidth <= 640;
+const PARTICLE_COUNT  = _isMobile ? 35 : 70;
 const SHOOTING_CHANCE = 0.0008;
 const MAX_SPEED       = 0.65;  // px/frame, prevents state forces from runaway
 
@@ -27,6 +28,7 @@ let _reduced   = false;
 let _w         = 0;
 let _h         = 0;
 let _orbState  = 'idle';
+let _awIdleLevel = 0;
 
 export function initParticles() {
   _canvas = document.getElementById('particles-canvas');
@@ -45,6 +47,8 @@ export function initParticles() {
     if (state === 'success') _triggerSuccessBurst();
     _orbState = state;
   });
+
+  Bus.on(EVENTS.AWARENESS_CHANGED, ({ idleLevel }) => { _awIdleLevel = idleLevel; });
 
   _spawnAll();
 
@@ -150,9 +154,10 @@ function _loop() {
   for (let i = 0; i < _particles.length; i++) {
     const p = _particles[i];
 
-    // Move
-    p.x += p.vx;
-    p.y += p.vy;
+    // Move — awareness idle slows everything down
+    const speedMul = _awIdleLevel >= 2 ? 0.50 : _awIdleLevel === 1 ? 0.78 : 1.0;
+    p.x += p.vx * speedMul;
+    p.y += p.vy * speedMul;
 
     if (!p.shooting) {
       // Base horizontal wander

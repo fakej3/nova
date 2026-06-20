@@ -17,6 +17,8 @@ import { initToasts, showToast }    from '../ui/toast.js';
 import { initInstallPrompt, renderInstallSection, triggerInstall } from '../ui/install.js';
 import { initNotes, renderNotesPanel, openNote } from '../modules/notes.js';
 import { initTasks, renderTasksPanel, openTask } from '../modules/tasks.js';
+import { initAwareness }               from '../ui/awareness.js';
+import { initReactor }                 from '../ui/reactor.js';
 import { initMouse }                   from '../ui/mouse.js';
 import { initHud }                     from '../ui/hud.js';
 import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
@@ -57,9 +59,13 @@ async function boot() {
     // 8. Start particles
     initParticles();
 
-    // 8b. Mouse parallax + HUD (after DOM is ready, before modules)
+    // 8b. Awareness system (before mouse and HUD so they can read it)
+    initAwareness();
+
+    // 8c. Mouse parallax + HUD + reactor core
     initMouse();
     await initHud();
+    initReactor();
 
     // 9. Init modules
     await initNotes();

@@ -1,0 +1,349 @@
+/* ============================================================
+   NOVA — Orb
+   All animations use transform + opacity only (GPU-accelerated).
+   ============================================================ */
+
+#orb-container {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Outer glow halo ────────────────────────────────────────── */
+
+#orb-glow-outer {
+  position: absolute;
+  inset: -40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    var(--orb-glow) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ── Rings ──────────────────────────────────────────────────── */
+
+#orb-ring-2 {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--orb-color-rgb), 0.15);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+#orb-ring-1 {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--orb-color-rgb), 0.3);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ── Orb body ───────────────────────────────────────────────── */
+
+#orb {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background:
+    radial-gradient(
+      ellipse at 35% 30%,
+      rgba(var(--orb-color-rgb), 0.35) 0%,
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at center,
+      var(--bg-surface) 40%,
+      var(--bg-secondary) 100%
+    );
+  border: 1px solid rgba(var(--orb-color-rgb), 0.4);
+  box-shadow:
+    0 0 40px var(--orb-glow),
+    0 0 80px rgba(var(--orb-color-rgb), 0.15),
+    inset 0 1px 0 rgba(var(--orb-color-rgb), 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  will-change: transform, opacity;
+}
+
+/* ── Inner core (bright center point) ──────────────────────── */
+
+#orb-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(var(--orb-color-rgb), 0.9) 0%,
+    rgba(var(--orb-color-rgb), 0.3) 50%,
+    transparent 100%
+  );
+  will-change: transform, opacity;
+}
+
+/* ── Shimmer overlay ────────────────────────────────────────── */
+
+#orb-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    rgba(var(--orb-color-rgb), 0.08) 0%,
+    transparent 50%,
+    rgba(var(--orb-color-rgb), 0.04) 100%
+  );
+  will-change: transform, opacity;
+}
+
+/* ============================================================
+   STATE: IDLE
+   Slow, meditative pulse.
+   ============================================================ */
+
+.state-idle #orb {
+  animation: orb-pulse-idle 3.2s ease-in-out infinite;
+}
+
+.state-idle #orb-glow-outer {
+  animation: glow-pulse-idle 3.2s ease-in-out infinite;
+}
+
+.state-idle #orb-ring-1 {
+  animation: ring-pulse-idle 3.2s ease-in-out infinite 0.4s;
+}
+
+.state-idle #orb-ring-2 {
+  animation: ring-pulse-idle 3.2s ease-in-out infinite 0.8s;
+}
+
+@keyframes orb-pulse-idle {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(1.03); opacity: 0.92; }
+}
+
+@keyframes glow-pulse-idle {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.06); }
+}
+
+@keyframes ring-pulse-idle {
+  0%, 100% { transform: scale(1);    opacity: 0.5; }
+  50%       { transform: scale(1.04); opacity: 1; }
+}
+
+/* ============================================================
+   STATE: LISTENING
+   Faster pulse, slightly larger, rings more active.
+   ============================================================ */
+
+.state-listening #orb {
+  animation: orb-pulse-listening 1.4s ease-in-out infinite;
+}
+
+.state-listening #orb-glow-outer {
+  animation: glow-pulse-listening 1.4s ease-in-out infinite;
+}
+
+.state-listening #orb-ring-1 {
+  animation: ring-ripple 1.4s ease-out infinite;
+}
+
+.state-listening #orb-ring-2 {
+  animation: ring-ripple 1.4s ease-out infinite 0.3s;
+}
+
+.state-listening #orb-core {
+  animation: core-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes orb-pulse-listening {
+  0%, 100% { transform: scale(1);     }
+  50%       { transform: scale(1.06); }
+}
+
+@keyframes glow-pulse-listening {
+  0%, 100% { opacity: 0.9; transform: scale(1.05); }
+  50%       { opacity: 1;   transform: scale(1.15); }
+}
+
+@keyframes ring-ripple {
+  0%   { transform: scale(1);    opacity: 0.8; }
+  70%  { transform: scale(1.08); opacity: 0.4; }
+  100% { transform: scale(1);    opacity: 0.8; }
+}
+
+@keyframes core-pulse {
+  0%, 100% { transform: translate(-50%, -50%) scale(1);    opacity: 0.8; }
+  50%       { transform: translate(-50%, -50%) scale(1.3); opacity: 1;   }
+}
+
+/* ============================================================
+   STATE: THINKING
+   Rotating shimmer + spin on ring.
+   ============================================================ */
+
+.state-thinking #orb {
+  animation: orb-thinking 2s ease-in-out infinite;
+}
+
+.state-thinking #orb-shimmer {
+  animation: shimmer-spin 2s linear infinite;
+}
+
+.state-thinking #orb-ring-1 {
+  animation: ring-spin 3s linear infinite;
+}
+
+.state-thinking #orb-ring-2 {
+  animation: ring-spin 5s linear infinite reverse;
+}
+
+.state-thinking #orb-glow-outer {
+  animation: glow-thinking 2s ease-in-out infinite;
+}
+
+@keyframes orb-thinking {
+  0%, 100% { transform: scale(1);     }
+  50%       { transform: scale(1.04); }
+}
+
+@keyframes shimmer-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes ring-spin {
+  from { transform: rotate(0deg) scale(1); }
+  to   { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes glow-thinking {
+  0%, 100% { opacity: 0.8; transform: scale(1.05); }
+  50%       { opacity: 1;   transform: scale(1.12); }
+}
+
+/* ============================================================
+   STATE: SPEAKING
+   Ripple wave effect.
+   ============================================================ */
+
+.state-speaking #orb {
+  animation: orb-speaking 0.8s ease-in-out infinite;
+}
+
+.state-speaking #orb-ring-1 {
+  animation: ripple-out 1.2s ease-out infinite;
+}
+
+.state-speaking #orb-ring-2 {
+  animation: ripple-out 1.2s ease-out infinite 0.4s;
+}
+
+.state-speaking #orb-glow-outer {
+  animation: glow-speaking 0.8s ease-in-out infinite;
+}
+
+.state-speaking #orb-core {
+  animation: core-speaking 0.8s ease-in-out infinite;
+}
+
+@keyframes orb-speaking {
+  0%, 100% { transform: scale(1);    }
+  25%       { transform: scale(1.04); }
+  75%       { transform: scale(0.98); }
+}
+
+@keyframes ripple-out {
+  0%   { transform: scale(1);    opacity: 0.8; }
+  100% { transform: scale(1.15); opacity: 0;   }
+}
+
+@keyframes glow-speaking {
+  0%, 100% { opacity: 1;   transform: scale(1.08); }
+  50%       { opacity: 0.6; transform: scale(1);    }
+}
+
+@keyframes core-speaking {
+  0%, 100% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+  50%       { transform: translate(-50%, -50%) scale(0.8); opacity: 0.6; }
+}
+
+/* ============================================================
+   STATE: OFFLINE
+   Dimmed, desaturated, slow static flicker.
+   ============================================================ */
+
+.state-offline #orb {
+  filter: saturate(0.15) brightness(0.5);
+  animation: orb-offline 4s ease-in-out infinite;
+}
+
+.state-offline #orb-glow-outer {
+  opacity: 0.2;
+  animation: none;
+}
+
+.state-offline #orb-ring-1,
+.state-offline #orb-ring-2 {
+  opacity: 0.15;
+  animation: none;
+}
+
+@keyframes orb-offline {
+  0%, 100%  { opacity: 0.6; transform: scale(1); }
+  33%        { opacity: 0.5; transform: scale(0.99); }
+  66%        { opacity: 0.65; transform: scale(1.01); }
+}
+
+/* ============================================================
+   Celebration pulse (one-shot, triggered via class)
+   ============================================================ */
+
+.orb-celebrate #orb {
+  animation: orb-celebrate 0.6s ease-out 3;
+}
+
+.orb-celebrate #orb-glow-outer {
+  animation: glow-celebrate 0.6s ease-out 3;
+}
+
+@keyframes orb-celebrate {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+@keyframes glow-celebrate {
+  0%   { opacity: 0.7; transform: scale(1); }
+  50%  { opacity: 1;   transform: scale(1.25); }
+  100% { opacity: 0.7; transform: scale(1); }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  #orb,
+  #orb-glow-outer,
+  #orb-ring-1,
+  #orb-ring-2,
+  #orb-core,
+  #orb-shimmer {
+    animation: none !important;
+    transition: none !important;
+  }
+}

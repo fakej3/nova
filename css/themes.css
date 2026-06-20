@@ -1,0 +1,151 @@
+/* ============================================================
+   NOVA — Themes
+   All theme variable sets. Applied via [data-theme="..."] on <html>.
+   ============================================================ */
+
+/* ── Iron Man ───────────────────────────────────────────────── */
+
+[data-theme="ironman"] {
+  --bg-primary:        #0a0e1a;
+  --bg-secondary:      #0d1626;
+  --bg-surface:        #111d35;
+  --bg-elevated:       #162440;
+
+  --accent-primary:    #00d4ff;
+  --accent-secondary:  #0088cc;
+  --accent-dim:        rgba(0, 212, 255, 0.12);
+
+  --text-primary:      #e8f4ff;
+  --text-secondary:    #6a9bba;
+  --text-muted:        #3d6680;
+
+  --orb-color:         #00d4ff;
+  --orb-color-rgb:     0, 212, 255;
+  --orb-glow:          rgba(0, 212, 255, 0.4);
+  --orb-glow-strong:   rgba(0, 212, 255, 0.7);
+
+  --particle-color:    #00d4ff;
+  --border-color:      rgba(0, 212, 255, 0.18);
+  --border-strong:     rgba(0, 212, 255, 0.4);
+
+  --status-success:    #22c55e;
+  --status-warning:    #f59e0b;
+  --status-error:      #ef4444;
+  --status-info:       #00d4ff;
+
+  --priority-high:     #ef4444;
+  --priority-med:      #f59e0b;
+  --priority-low:      #22c55e;
+}
+
+/* ── Space ──────────────────────────────────────────────────── */
+
+[data-theme="space"] {
+  --bg-primary:        #000000;
+  --bg-secondary:      #060610;
+  --bg-surface:        #0d0d1e;
+  --bg-elevated:       #121228;
+
+  --accent-primary:    #b8b8ff;
+  --accent-secondary:  #7c60d0;
+  --accent-dim:        rgba(184, 184, 255, 0.1);
+
+  --text-primary:      #f0f0ff;
+  --text-secondary:    #7070a0;
+  --text-muted:        #404060;
+
+  --orb-color:         #b8b8ff;
+  --orb-color-rgb:     184, 184, 255;
+  --orb-glow:          rgba(184, 184, 255, 0.35);
+  --orb-glow-strong:   rgba(184, 184, 255, 0.65);
+
+  --particle-color:    #ffffff;
+  --border-color:      rgba(184, 184, 255, 0.14);
+  --border-strong:     rgba(184, 184, 255, 0.35);
+
+  --status-success:    #4ade80;
+  --status-warning:    #fbbf24;
+  --status-error:      #f87171;
+  --status-info:       #b8b8ff;
+
+  --priority-high:     #f87171;
+  --priority-med:      #fbbf24;
+  --priority-low:      #4ade80;
+}
+
+/* ── Cyberpunk ──────────────────────────────────────────────── */
+
+[data-theme="cyberpunk"] {
+  --bg-primary:        #0a0a0a;
+  --bg-secondary:      #111111;
+  --bg-surface:        #1a1a1a;
+  --bg-elevated:       #222222;
+
+  --accent-primary:    #ff0080;
+  --accent-secondary:  #00ffff;
+  --accent-dim:        rgba(255, 0, 128, 0.1);
+
+  --text-primary:      #ffffff;
+  --text-secondary:    #888888;
+  --text-muted:        #444444;
+
+  --orb-color:         #ff0080;
+  --orb-color-rgb:     255, 0, 128;
+  --orb-glow:          rgba(255, 0, 128, 0.45);
+  --orb-glow-strong:   rgba(255, 0, 128, 0.75);
+
+  --particle-color:    #00ffff;
+  --border-color:      rgba(255, 0, 128, 0.22);
+  --border-strong:     rgba(255, 0, 128, 0.5);
+
+  --status-success:    #00ff88;
+  --status-warning:    #ffcc00;
+  --status-error:      #ff0040;
+  --status-info:       #00ffff;
+
+  --priority-high:     #ff0040;
+  --priority-med:      #ffcc00;
+  --priority-low:      #00ff88;
+}
+
+/* ── Minimal ────────────────────────────────────────────────── */
+
+[data-theme="minimal"] {
+  --bg-primary:        #f5f5f0;
+  --bg-secondary:      #eeeeea;
+  --bg-surface:        #ffffff;
+  --bg-elevated:       #ffffff;
+
+  --accent-primary:    #1a1a1a;
+  --accent-secondary:  #555555;
+  --accent-dim:        rgba(26, 26, 26, 0.08);
+
+  --text-primary:      #1a1a1a;
+  --text-secondary:    #666666;
+  --text-muted:        #999999;
+
+  --orb-color:         #1a1a1a;
+  --orb-color-rgb:     26, 26, 26;
+  --orb-glow:          rgba(26, 26, 26, 0.15);
+  --orb-glow-strong:   rgba(26, 26, 26, 0.3);
+
+  --particle-color:    #aaaaaa;
+  --border-color:      rgba(26, 26, 26, 0.12);
+  --border-strong:     rgba(26, 26, 26, 0.3);
+
+  --status-success:    #16a34a;
+  --status-warning:    #d97706;
+  --status-error:      #dc2626;
+  --status-info:       #1a1a1a;
+
+  --priority-high:     #dc2626;
+  --priority-med:      #d97706;
+  --priority-low:      #16a34a;
+}
+
+/* ── Theme Swatch Colors (for settings UI) ──────────────────── */
+
+.ironman-swatch  { background: linear-gradient(135deg, #0a0e1a 50%, #00d4ff 50%); }
+.space-swatch    { background: linear-gradient(135deg, #000000 50%, #b8b8ff 50%); }
+.cyberpunk-swatch { background: linear-gradient(135deg, #0a0a0a 50%, #ff0080 50%); }
+.minimal-swatch  { background: linear-gradient(135deg, #f5f5f0 50%, #1a1a1a 50%); }

@@ -147,6 +147,12 @@
       </div>
     </div>
 
+    <!-- Install indicator — visible only when prompt is available -->
+    <button id="install-indicator" hidden aria-label="Install NOVA" title="Install NOVA as a desktop app">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>Install</span>
+    </button>
+
     <!-- Settings panel trigger -->
     <button id="settings-btn" aria-label="Settings" title="Settings">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -200,6 +206,18 @@
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
               <span class="toggle-text">Switch theme automatically</span>
             </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="settings-section">
+            <label class="settings-label">Install NOVA</label>
+            <div id="install-section">
+              <!-- Populated by install.js when settings opens -->
+              <div class="install-state install-state--loading">
+                <span class="install-desc">Checking install availability…</span>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

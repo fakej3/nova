@@ -893,3 +893,165 @@
   font-weight: 700;
   padding: 0 5px;
 }
+
+/* ── Install section (Settings modal) ───────────────────────── */
+
+.install-state {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.install-state--done {
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  border-radius: 10px;
+}
+
+.install-state-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--status-success);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.install-state-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.install-state-text strong {
+  font-size: 13px;
+  color: var(--status-success);
+}
+
+.install-state-text span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.install-state--ready {
+  gap: 10px;
+}
+
+.install-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.install-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.install-cta {
+  font-size: 14px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 20px rgba(var(--orb-color-rgb), 0.25);
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.install-step {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+
+.install-step:last-child {
+  border-bottom: none;
+}
+
+.install-step-browser {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  min-width: 42px;
+  flex-shrink: 0;
+}
+
+.install-step-action {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.install-step-action strong {
+  color: var(--text-primary);
+}
+
+.install-state--loading .install-desc {
+  opacity: 0.5;
+}
+
+/* ── Install indicator badge (main screen) ──────────────────── */
+
+#install-indicator {
+  position: fixed;
+  bottom: 130px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px 7px 10px;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  z-index: 10;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 20px rgba(var(--orb-color-rgb), 0.4);
+  animation: install-pulse 2.5s ease-in-out infinite;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+#install-indicator[hidden] {
+  display: none;
+}
+
+#install-indicator:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 30px rgba(var(--orb-color-rgb), 0.6);
+}
+
+#install-indicator:active {
+  transform: scale(0.97);
+}
+
+@keyframes install-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(var(--orb-color-rgb), 0.4); }
+  50%       { box-shadow: 0 0 32px rgba(var(--orb-color-rgb), 0.7); }
+}

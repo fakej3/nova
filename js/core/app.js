@@ -13,7 +13,7 @@ import { initThemeEngine, applyTheme, setAutoTheme } from '../ui/theme.js';
 import { initClock }                from '../ui/clock.js';
 import { initParticles }            from '../ui/particles.js';
 import { initToasts, showToast }    from '../ui/toast.js';
-import { initInstallPrompt }        from '../ui/install.js';
+import { initInstallPrompt, renderInstallSection, triggerInstall } from '../ui/install.js';
 import { initNotes, renderNotesPanel } from '../modules/notes.js';
 import { initTasks, renderTasksPanel } from '../modules/tasks.js';
 import { initMouse }                   from '../ui/mouse.js';
@@ -69,6 +69,7 @@ async function boot() {
 
     // 11. PWA install prompt
     await initInstallPrompt();
+    _wireInstallIndicator();
 
     // 12. Done
     State.set('initialized', true);
@@ -313,14 +314,17 @@ function _wireSettings() {
 }
 
 function _openSettings() {
-  const modal    = document.getElementById('settings-modal');
-  const aiInput  = document.getElementById('setting-ai-name');
+  const modal     = document.getElementById('settings-modal');
+  const aiInput   = document.getElementById('setting-ai-name');
   const userInput = document.getElementById('setting-user-name');
   const autoToggle = document.getElementById('setting-auto-theme');
 
-  if (aiInput)   aiInput.value   = State.get('aiName')    ?? 'NOVA';
-  if (userInput) userInput.value = State.get('userName')   ?? '';
-  if (autoToggle) autoToggle.checked = State.get('autoTheme') ?? false;
+  if (aiInput)    aiInput.value        = State.get('aiName')    ?? 'NOVA';
+  if (userInput)  userInput.value      = State.get('userName')  ?? '';
+  if (autoToggle) autoToggle.checked   = State.get('autoTheme') ?? false;
+
+  // Render install section with current state every time settings opens
+  renderInstallSection();
 
   if (modal) modal.hidden = false;
   aiInput?.focus();
@@ -355,6 +359,18 @@ async function _saveSettings() {
 function _updateAiNameDisplay() {
   const el = document.getElementById('ai-name-display');
   if (el) el.textContent = State.get('aiName') || 'NOVA';
+}
+
+// ── Install indicator ─────────────────────────────────────────
+
+function _wireInstallIndicator() {
+  const indicator = document.getElementById('install-indicator');
+  if (!indicator) return;
+
+  // Clicking the main-screen badge opens Settings directly to the install section
+  indicator.addEventListener('click', () => {
+    _openSettings();
+  });
 }
 
 // ── Connectivity ──────────────────────────────────────────────

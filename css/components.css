@@ -1055,3 +1055,75 @@
   0%, 100% { box-shadow: 0 0 20px rgba(var(--orb-color-rgb), 0.4); }
   50%       { box-shadow: 0 0 32px rgba(var(--orb-color-rgb), 0.7); }
 }
+
+/* ── Install diagnostics panel ──────────────────────────────── */
+
+.install-state--unavailable {
+  gap: 10px;
+}
+
+.install-unavailable-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.install-reason-icon {
+  color: var(--status-warning);
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.diag-panel {
+  margin-top: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diag-summary {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  background: var(--bg-primary);
+}
+
+.diag-summary::-webkit-details-marker { display: none; }
+.diag-summary::before { content: '▶ '; font-size: 9px; }
+details[open] .diag-summary::before { content: '▼ '; }
+
+.diag-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0;
+  padding: 4px 0;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+}
+
+.diag-label {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.diag-label:last-of-type { border-bottom: none; }
+
+.diag-yes     { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--status-success); border-bottom: 1px solid var(--border-color); }
+.diag-no      { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--status-error);   border-bottom: 1px solid var(--border-color); }
+.diag-unknown { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--text-muted);     border-bottom: 1px solid var(--border-color); }

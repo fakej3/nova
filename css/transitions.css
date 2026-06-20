@@ -234,6 +234,46 @@ html.no-transition * {
     box-shadow 0.18s ease;
 }
 
+/* ── Search result hover ────────────────────────────────────── */
+
+.sp-result {
+  transition: background 0.15s ease, transform 0.12s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+/* ── Timeline row ───────────────────────────────────────────── */
+
+.tl-row {
+  transition: background 0.15s ease;
+}
+
+/* ── Memory card ────────────────────────────────────────────── */
+
+.mp-card {
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+/* ── Tag chip ───────────────────────────────────────────────── */
+
+.tag-chip {
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* ── Bottom nav on mobile — no transition flicker ───────────── */
+
+@media (max-width: 640px) {
+  #nav-dots {
+    transition:
+      background-color 380ms ease,
+      border-color 380ms ease;
+  }
+}
+
 /* ── Reduced motion ─────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

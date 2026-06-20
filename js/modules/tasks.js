@@ -87,6 +87,12 @@ async function _deleteLinkedMemory(sourceId) {
   }
 }
 
+// Navigate directly to a task's editor — used by search-panel result clicks.
+export async function openTask(id) {
+  _panelContent = document.getElementById('panel-content');
+  _renderEditor(id);
+}
+
 // ── Rendering ─────────────────────────────────────────────────
 
 async function _renderList(filter = 'all') {

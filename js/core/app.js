@@ -15,11 +15,14 @@ import { initClock }                from '../ui/clock.js';
 import { initParticles }            from '../ui/particles.js';
 import { initToasts, showToast }    from '../ui/toast.js';
 import { initInstallPrompt, renderInstallSection, triggerInstall } from '../ui/install.js';
-import { initNotes, renderNotesPanel } from '../modules/notes.js';
-import { initTasks, renderTasksPanel } from '../modules/tasks.js';
+import { initNotes, renderNotesPanel, openNote } from '../modules/notes.js';
+import { initTasks, renderTasksPanel, openTask } from '../modules/tasks.js';
 import { initMouse }                   from '../ui/mouse.js';
 import { initHud }                     from '../ui/hud.js';
 import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
+import { renderSearchPanel }           from '../modules/search-panel.js';
+import { renderMemoriesPanel }         from '../modules/memories-panel.js';
+import { renderTimeline }              from '../modules/timeline.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -68,13 +71,25 @@ async function boot() {
     _wireInputBar();
     _wireSettings();
     _wireConnectivity();
+    _wireKeyboardShortcuts();
+    _wireOpenResult();
 
-    // Refresh events panel if it's open when a new event is logged
+    // Refresh timeline if open when a new event is logged
     Bus.on(EVENTS.EVENT_LOGGED, () => {
       if (State.get('activeView') === 'events' && State.get('panelOpen')) {
-        _renderEventsPanel();
+        renderTimeline();
       }
     });
+
+    // Refresh memories panel if open when a memory changes
+    const _refreshMemories = () => {
+      if (State.get('activeView') === 'memories' && State.get('panelOpen')) {
+        renderMemoriesPanel();
+      }
+    };
+    Bus.on(EVENTS.MEMORY_CREATED, _refreshMemories);
+    Bus.on(EVENTS.MEMORY_UPDATED, _refreshMemories);
+    Bus.on(EVENTS.MEMORY_DELETED, _refreshMemories);
 
     // 11. PWA install prompt
     await initInstallPrompt();
@@ -115,15 +130,11 @@ function _wireNavigation() {
   const navDots = document.querySelectorAll('.nav-dot');
 
   navDots.forEach((dot) => {
-    dot.addEventListener('click', () => {
-      const view = dot.dataset.view;
-      _switchView(view);
-    });
+    dot.addEventListener('click', () => _switchView(dot.dataset.view));
     dot.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        const view = dot.dataset.view;
-        _switchView(view);
+        _switchView(dot.dataset.view);
       }
     });
   });
@@ -140,7 +151,6 @@ function _wireNavigation() {
 function _switchView(view) {
   const prev = State.get('activeView');
   if (view === prev && State.get('panelOpen')) {
-    // Same view clicked again — toggle panel
     _closePanel();
     return;
   }
@@ -154,15 +164,16 @@ function _switchView(view) {
   }
 
   _openPanel(view);
-  logEvent(EVENT_TYPES.VIEW_CHANGED, `Switched to ${view} view`);
+  if (view !== 'search') {
+    logEvent(EVENT_TYPES.VIEW_CHANGED, `Switched to ${view} view`);
+  }
 }
 
 // ── Panel ─────────────────────────────────────────────────────
 
 function _wirePanel() {
-  const panel   = document.getElementById('panel');
-  const backdrop = document.getElementById('panel-backdrop');
-  const closeBtn = document.getElementById('panel-close');
+  const closeBtn  = document.getElementById('panel-close');
+  const backdrop  = document.getElementById('panel-backdrop');
 
   closeBtn?.addEventListener('click', _closePanel);
   backdrop?.addEventListener('click', _closePanel);
@@ -172,26 +183,32 @@ function _wirePanel() {
   });
 }
 
+const VIEW_LABELS = {
+  notes:    'Notes',
+  tasks:    'Tasks',
+  events:   'Timeline',
+  memories: 'Memories',
+  search:   'Search',
+};
+
 function _openPanel(view) {
   const panel    = document.getElementById('panel');
   const backdrop = document.getElementById('panel-backdrop');
   const title    = document.getElementById('panel-title');
 
-  const labels = { notes: 'Notes', tasks: 'Tasks', events: 'Activity Log' };
-
-  if (title) title.textContent = labels[view] ?? view;
-  if (panel) panel.setAttribute('aria-hidden', 'false');
+  if (title)    title.textContent = VIEW_LABELS[view] ?? view;
+  if (panel)    panel.setAttribute('aria-hidden', 'false');
   if (backdrop) backdrop.classList.add('visible');
 
   State.set('panelOpen', true);
   Bus.emit(EVENTS.PANEL_TOGGLE, { open: true, view });
 
-  // Render view content
-  if (view === 'notes') renderNotesPanel();
-  if (view === 'tasks') renderTasksPanel();
-  if (view === 'events') _renderEventsPanel();
+  if (view === 'notes')    renderNotesPanel();
+  if (view === 'tasks')    renderTasksPanel();
+  if (view === 'events')   renderTimeline();
+  if (view === 'memories') renderMemoriesPanel();
+  if (view === 'search')   renderSearchPanel();
 
-  // Focus first focusable element in panel
   requestAnimationFrame(() => {
     panel?.querySelector('button, input, [tabindex="0"]')?.focus();
   });
@@ -201,7 +218,7 @@ function _closePanel() {
   const panel    = document.getElementById('panel');
   const backdrop = document.getElementById('panel-backdrop');
 
-  if (panel) panel.setAttribute('aria-hidden', 'true');
+  if (panel)    panel.setAttribute('aria-hidden', 'true');
   if (backdrop) backdrop.classList.remove('visible');
 
   State.set('panelOpen', false);
@@ -210,58 +227,50 @@ function _closePanel() {
   Bus.emit(EVENTS.VIEW_CHANGED, { view: 'home' });
 }
 
-// ── Events panel ──────────────────────────────────────────────
+// ── Keyboard shortcuts ────────────────────────────────────────
 
-async function _renderEventsPanel() {
-  const content = document.getElementById('panel-content');
-  if (!content) return;
-
-  const events = await DB.events.getRecent(100);
-
-  if (events.length === 0) {
-    content.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon" aria-hidden="true">◉</div>
-        <div class="empty-title">No activity yet</div>
-        <div class="empty-desc">Events will appear here as you use NOVA.</div>
-      </div>
-    `;
-    return;
-  }
-
-  const items = events
-    .map((ev) => {
-      const time = _formatEventTime(ev.timestamp);
-      return `
-        <div class="event-item">
-          <div class="event-dot" aria-hidden="true"></div>
-          <div class="event-body">
-            <div class="event-desc">${escHtml(ev.description)}</div>
-            <div class="event-time">${time}</div>
-          </div>
-        </div>
-      `;
-    })
-    .join('');
-
-  content.innerHTML = `
-    <div class="section-header">
-      <span class="section-title">Recent Activity</span>
-      <span class="count-badge">${events.length}</span>
-    </div>
-    ${items}
-  `;
+function _wireKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    // Cmd+K / Ctrl+K — open global search
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      const current = State.get('activeView');
+      if (current === 'search' && State.get('panelOpen')) {
+        // Focus the search input if already open
+        document.getElementById('sp-input')?.focus();
+      } else {
+        _switchView('search');
+      }
+    }
+  });
 }
 
-function _formatEventTime(iso) {
-  if (!iso) return '';
-  const d   = new Date(iso);
-  const now = new Date();
-  const diff = now - d;
-  if (diff < 60_000)    return 'just now';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+// ── Open search result ────────────────────────────────────────
+
+function _wireOpenResult() {
+  document.addEventListener('nova:open-result', async (e) => {
+    const { type, id } = e.detail;
+
+    if (type === 'note') {
+      _switchView('notes');
+      // Wait for notes panel to render, then open editor
+      requestAnimationFrame(() => openNote(id));
+      return;
+    }
+    if (type === 'task') {
+      _switchView('tasks');
+      requestAnimationFrame(() => openTask(id));
+      return;
+    }
+    if (type === 'event') {
+      _switchView('events');
+      return;
+    }
+    if (type === 'memory') {
+      _switchView('memories');
+      return;
+    }
+  });
 }
 
 // ── Input Bar ─────────────────────────────────────────────────
@@ -274,7 +283,7 @@ function _wireInputBar() {
     const value = input?.value.trim();
     if (!value) return;
     input.value = '';
-    showToast('AI integration coming in Phase 2 — but I heard you!', 'info', 4000);
+    showToast('AI integration coming in Phase 3 — but I heard you!', 'info', 4000);
     setOrbState('thinking');
     setTimeout(() => setOrbState('idle'), 2000);
     logEvent('conversation_attempted', `User said: "${value.slice(0, 80)}${value.length > 80 ? '…' : ''}"`);
@@ -293,12 +302,12 @@ function _wireInputBar() {
 // ── Settings ──────────────────────────────────────────────────
 
 function _wireSettings() {
-  const settingsBtn   = document.getElementById('settings-btn');
-  const modal         = document.getElementById('settings-modal');
-  const closeBtn      = modal?.querySelector('.modal-close');
-  const backdrop      = modal?.querySelector('.modal-backdrop');
-  const saveBtn       = document.getElementById('settings-save');
-  const themePicker   = document.getElementById('theme-picker');
+  const settingsBtn     = document.getElementById('settings-btn');
+  const modal           = document.getElementById('settings-modal');
+  const closeBtn        = modal?.querySelector('.modal-close');
+  const backdrop        = modal?.querySelector('.modal-backdrop');
+  const saveBtn         = document.getElementById('settings-save');
+  const themePicker     = document.getElementById('theme-picker');
   const autoThemeToggle = document.getElementById('setting-auto-theme');
 
   settingsBtn?.addEventListener('click', _openSettings);
@@ -319,19 +328,16 @@ function _wireSettings() {
 }
 
 function _openSettings() {
-  const modal     = document.getElementById('settings-modal');
-  const aiInput   = document.getElementById('setting-ai-name');
-  const userInput = document.getElementById('setting-user-name');
+  const modal      = document.getElementById('settings-modal');
+  const aiInput    = document.getElementById('setting-ai-name');
+  const userInput  = document.getElementById('setting-user-name');
   const autoToggle = document.getElementById('setting-auto-theme');
 
-  if (aiInput)    aiInput.value        = State.get('aiName')    ?? 'NOVA';
-  if (userInput)  userInput.value      = State.get('userName')  ?? '';
-  if (autoToggle) autoToggle.checked   = State.get('autoTheme') ?? false;
+  if (aiInput)    aiInput.value      = State.get('aiName')    ?? 'NOVA';
+  if (userInput)  userInput.value    = State.get('userName')  ?? '';
+  if (autoToggle) autoToggle.checked = State.get('autoTheme') ?? false;
 
-  // Render install section with current state every time settings opens
   renderInstallSection();
-
-  // Render diagnostics panel with fresh data every time settings opens
   renderDiagnosticsPanel();
 
   if (modal) modal.hidden = false;
@@ -372,20 +378,14 @@ function _updateAiNameDisplay() {
 // ── Diagnostics ───────────────────────────────────────────────
 
 function _wireDiagnostics() {
-  // Diagnostics panel re-renders whenever Settings opens (handled in _openSettings).
-  // Nothing else to wire at boot — it's a pull-only panel.
+  // Re-renders whenever Settings opens (handled in _openSettings).
 }
 
 // ── Install indicator ─────────────────────────────────────────
 
 function _wireInstallIndicator() {
   const indicator = document.getElementById('install-indicator');
-  if (!indicator) return;
-
-  // Clicking the main-screen badge opens Settings directly to the install section
-  indicator.addEventListener('click', () => {
-    _openSettings();
-  });
+  indicator?.addEventListener('click', () => _openSettings());
 }
 
 // ── Connectivity ──────────────────────────────────────────────
@@ -411,7 +411,6 @@ function _wireConnectivity() {
 
   window.addEventListener('online',  updateDot);
   window.addEventListener('offline', updateDot);
-  // Set initial state
   State.set('connectivity', navigator.onLine);
   if (dot) dot.classList.toggle('offline', !navigator.onLine);
 }

@@ -8,12 +8,13 @@ import { Bus, EVENTS } from '../core/bus.js';
 import { logEvent, EVENT_TYPES } from '../services/events.js';
 import { showToast } from '../ui/toast.js';
 import { pulseOrb } from '../ui/orb.js';
-import { escHtml } from '../core/utils.js';
+import { escHtml, stripMarkdown } from '../core/utils.js';
 import { upsertMemoryForNote } from '../services/memory.js';
 
 let _panelContent = null;
 let _currentView  = 'list'; // list | editor
 let _editingId    = null;
+let _activeTag    = null;   // null = show all
 
 export async function initNotes() {
   _panelContent = document.getElementById('panel-content');
@@ -60,6 +61,12 @@ export async function searchNotes(query) {
   return DB.notes.search(query);
 }
 
+// Navigate directly to a note's editor — used by search-panel result clicks.
+export async function openNote(id) {
+  _panelContent = document.getElementById('panel-content');
+  _renderEditor(id);
+}
+
 async function _deleteLinkedMemory(sourceId) {
   try {
     const mem = await DB.memories.getByRelatedId(sourceId);
@@ -76,12 +83,32 @@ async function _renderList(query = '') {
   _currentView = 'list';
   _editingId   = null;
 
-  const all   = query ? await DB.notes.search(query) : await DB.notes.getAll();
-  const notes = all.sort((a, b) => {
+  const all = query ? await DB.notes.search(query) : await DB.notes.getAll();
+
+  // Collect all unique tags across notes for the tag filter
+  const tagSet = new Set();
+  for (const n of all) (n.tags ?? []).forEach((t) => tagSet.add(t));
+  const allTags = [...tagSet].sort();
+
+  // Apply active tag filter
+  const filtered = _activeTag
+    ? all.filter((n) => (n.tags ?? []).includes(_activeTag))
+    : all;
+
+  const notes = filtered.sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
     return a.updatedAt > b.updatedAt ? -1 : 1;
   });
+
+  const tagChips = allTags.length > 0 ? `
+    <div class="tag-filter-row" role="group" aria-label="Filter by tag">
+      <button class="tag-chip ${!_activeTag ? 'active' : ''}" data-tag="">All</button>
+      ${allTags.map((t) => `
+        <button class="tag-chip ${_activeTag === t ? 'active' : ''}" data-tag="${escHtml(t)}">${escHtml(t)}</button>
+      `).join('')}
+    </div>
+  ` : '';
 
   _panelContent.innerHTML = `
     <div class="panel-actions">
@@ -93,11 +120,12 @@ async function _renderList(query = '') {
         type="search"
         class="search-input"
         id="notes-search"
-        placeholder="Search notes..."
+        placeholder="Search notes…"
         value="${escHtml(query)}"
         aria-label="Search notes"
       />
     </div>
+    ${tagChips}
     <div id="notes-list" class="item-list" aria-label="Notes list">
       ${notes.length === 0 ? _emptyState() : notes.map(_noteCard).join('')}
     </div>
@@ -112,6 +140,13 @@ async function _renderList(query = '') {
     searchTimer = setTimeout(() => _renderList(e.target.value), 250);
   });
 
+  _panelContent.querySelectorAll('.tag-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      _activeTag = chip.dataset.tag || null;
+      _renderList(searchEl?.value ?? '');
+    });
+  });
+
   document.querySelectorAll('.note-card').forEach((el) => {
     el.addEventListener('click', () => _renderEditor(el.dataset.id));
     el.addEventListener('keydown', (e) => {
@@ -122,8 +157,8 @@ async function _renderList(query = '') {
 
 function _noteCard(note) {
   const date    = _formatDate(note.updatedAt);
-  const preview = note.content.replace(/\n/g, ' ').slice(0, 120);
-  const tags    = note.tags.slice(0, 3).map((t) => `<span class="tag">${escHtml(t)}</span>`).join('');
+  const preview = stripMarkdown(note.content).slice(0, 120);
+  const tags    = note.tags.slice(0, 4).map((t) => `<span class="tag">${escHtml(t)}</span>`).join('');
 
   return `
     <div class="card note-card card-appear ${note.pinned ? 'pinned' : ''}"

@@ -3,7 +3,11 @@
  * Tracks mouse position and applies layered parallax to the orb.
  * Each layer moves at a different rate to create depth.
  * Uses lerp for smooth, inertia-based motion.
+ * Also passes normalized mouse position to the HUD canvas for
+ * a subtle directional glow that follows the cursor.
  */
+
+import { setHudMouseInfluence } from './hud.js';
 
 const LERP_SPEED = 0.072;   // smoothing (lower = more lag = heavier feel)
 const MAX_SHIFT  = 22;       // max px any layer can shift
@@ -81,7 +85,9 @@ function _tick() {
   const dx = currentX;
   const dy = currentY;
 
-  // Skip tiny movements
+  setHudMouseInfluence(currentX, currentY);
+
+  // Skip tiny movements for parallax and light source
   if (Math.abs(dx) > 0.0005 || Math.abs(dy) > 0.0005) {
     _applyParallax(dx, dy);
     _applyLightSource(dx, dy);

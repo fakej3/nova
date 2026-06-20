@@ -62,4 +62,7 @@ export const EVENTS = {
   MEMORY_CREATED: 'memory:created',
   MEMORY_UPDATED: 'memory:updated',
   MEMORY_DELETED: 'memory:deleted',
+
+  // Orb
+  ORB_STATE_CHANGED: 'orb:state_changed',
 };

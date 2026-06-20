@@ -1,14 +1,22 @@
 /**
  * NOVA Particle System
- * Canvas-based ambient particles with varied motion, depth layers,
- * and occasional shooting particles.
+ * Canvas-based ambient particles with state-reactive behavior.
+ *
+ * State effects:
+ *   thinking   — gentle orbital motion around orb center
+ *   responding — particles drift outward (energy expulsion)
+ *   listening  — subtle inward clustering
+ *   error      — minor chaotic jitter
+ *   success    — one-shot outward burst impulse
+ *
  * Respects prefers-reduced-motion.
  */
 
 import { Bus, EVENTS } from '../core/bus.js';
 
 const PARTICLE_COUNT  = 70;
-const SHOOTING_CHANCE = 0.0008; // per frame, per particle check
+const SHOOTING_CHANCE = 0.0008;
+const MAX_SPEED       = 0.65;  // px/frame, prevents state forces from runaway
 
 let _canvas    = null;
 let _ctx       = null;
@@ -18,6 +26,7 @@ let _color     = '#00d4ff';
 let _reduced   = false;
 let _w         = 0;
 let _h         = 0;
+let _orbState  = 'idle';
 
 export function initParticles() {
   _canvas = document.getElementById('particles-canvas');
@@ -31,6 +40,11 @@ export function initParticles() {
 
   _readColor();
   Bus.on(EVENTS.THEME_CHANGED, () => requestAnimationFrame(_readColor));
+
+  Bus.on(EVENTS.ORB_STATE_CHANGED, ({ state }) => {
+    if (state === 'success') _triggerSuccessBurst();
+    _orbState = state;
+  });
 
   _spawnAll();
 
@@ -58,47 +72,44 @@ function _readColor() {
 // ── Particle factory ───────────────────────────────────────────
 
 function _createParticle(randomPos = false) {
-  const layer = Math.random();                 // 0=far, 1=near
-  const size  = layer * 1.6 + 0.3;            // 0.3–1.9px (depth illusion)
-  const speed = layer * 0.22 + 0.05;          // far = slow, near = faster
-
-  // Varied motion directions: mostly upward drift with gentle horizontal wander
-  const angle  = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+  const layer = Math.random();
+  const size  = layer * 1.6 + 0.3;
+  const speed = layer * 0.22 + 0.05;
+  const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
 
   return {
-    x:        randomPos ? Math.random() * _w : Math.random() * _w,
-    y:        randomPos ? Math.random() * _h : _h + size + 2,
-    vx:       Math.cos(angle) * speed,
-    vy:       Math.sin(angle) * speed,
+    x:         randomPos ? Math.random() * _w : Math.random() * _w,
+    y:         randomPos ? Math.random() * _h : _h + size + 2,
+    vx:        Math.cos(angle) * speed,
+    vy:        Math.sin(angle) * speed,
     size,
     layer,
-    opacity:  Math.random() * 0.45 + 0.05,
-    opDir:    Math.random() > 0.5 ? 1 : -1,
-    opSpeed:  Math.random() * 0.004 + 0.0008,
-    opMax:    layer * 0.45 + 0.12,            // near particles brighter
-    color:    _color,
-    shooting: false,
+    opacity:   Math.random() * 0.45 + 0.05,
+    opDir:     Math.random() > 0.5 ? 1 : -1,
+    opSpeed:   Math.random() * 0.004 + 0.0008,
+    opMax:     layer * 0.45 + 0.12,
+    color:     _color,
+    shooting:  false,
     shootLife: 0,
   };
 }
 
 function _createShootingParticle() {
-  // Shoots across at a shallow diagonal angle
   const fromLeft = Math.random() > 0.5;
   return {
-    x:        fromLeft ? -20 : _w + 20,
-    y:        Math.random() * _h * 0.6 + _h * 0.1,
-    vx:       (fromLeft ? 1 : -1) * (2.5 + Math.random() * 2),
-    vy:       (Math.random() - 0.5) * 0.8,
-    size:     1.2,
-    layer:    1,
-    opacity:  0.8,
-    opDir:    -1,
-    opSpeed:  0.012,
-    opMax:    0.8,
-    color:    _color,
-    shooting: true,
-    shootLife: 0,
+    x:          fromLeft ? -20 : _w + 20,
+    y:          Math.random() * _h * 0.6 + _h * 0.1,
+    vx:         (fromLeft ? 1 : -1) * (2.5 + Math.random() * 2),
+    vy:         (Math.random() - 0.5) * 0.8,
+    size:       1.2,
+    layer:      1,
+    opacity:    0.8,
+    opDir:      -1,
+    opSpeed:    0.012,
+    opMax:      0.8,
+    color:      _color,
+    shooting:   true,
+    shootLife:  0,
     tailLength: 60 + Math.random() * 60,
   };
 }
@@ -110,10 +121,31 @@ function _spawnAll() {
   }
 }
 
+// ── Success burst — one-shot outward impulse ───────────────────
+
+function _triggerSuccessBurst() {
+  const cx = _w / 2;
+  const cy = _h / 2;
+  for (const p of _particles) {
+    if (p.shooting) continue;
+    const dx   = p.x - cx;
+    const dy   = p.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > 5) {
+      const inv = 1 / dist;
+      p.vx += dx * inv * 0.45;
+      p.vy += dy * inv * 0.45;
+    }
+  }
+}
+
 // ── Animation loop ─────────────────────────────────────────────
 
 function _loop() {
   _ctx.clearRect(0, 0, _w, _h);
+
+  const cx = _w / 2;
+  const cy = _h / 2;
 
   for (let i = 0; i < _particles.length; i++) {
     const p = _particles[i];
@@ -122,17 +154,55 @@ function _loop() {
     p.x += p.vx;
     p.y += p.vy;
 
-    // Subtle horizontal wander (only on regular particles)
     if (!p.shooting) {
+      // Base horizontal wander
       p.vx += (Math.random() - 0.5) * 0.003;
-      // Dampen drift to avoid runaway horizontal speed
       p.vx *= 0.998;
+
+      // State-specific forces
+      const dx   = p.x - cx;
+      const dy   = p.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (_orbState === 'thinking' && dist > 30 && dist < 380) {
+        // Clockwise orbital motion + weak centripetal pull
+        const inv = 1 / dist;
+        p.vx += -dy * inv * 0.004;
+        p.vy +=  dx * inv * 0.004;
+        p.vx -= dx * inv * 0.0012;
+        p.vy -= dy * inv * 0.0012;
+
+      } else if (_orbState === 'responding' && dist > 20) {
+        // Outward drift — energy expulsion
+        const inv = 1 / dist;
+        p.vx += dx * inv * 0.0028;
+        p.vy += dy * inv * 0.0028;
+
+      } else if (_orbState === 'listening' && dist > 100 && dist < 420) {
+        // Inward clustering toward orb
+        const inv = 1 / dist;
+        p.vx -= dx * inv * 0.001;
+        p.vy -= dy * inv * 0.001;
+
+      } else if (_orbState === 'error') {
+        // Chaotic micro-jitter
+        p.vx += (Math.random() - 0.5) * 0.014;
+        p.vy += (Math.random() - 0.5) * 0.014;
+      }
+
+      // Speed limit — prevents state forces from accumulating indefinitely
+      const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      if (spd > MAX_SPEED) {
+        const inv = MAX_SPEED / spd;
+        p.vx *= inv;
+        p.vy *= inv;
+      }
     }
 
     // Opacity breathe
     p.opacity += p.opSpeed * p.opDir;
-    if (p.opacity >= p.opMax)  { p.opDir = -1; }
-    if (p.opacity <= 0.03)     { p.opDir =  1; }
+    if (p.opacity >= p.opMax) p.opDir = -1;
+    if (p.opacity <= 0.03)    p.opDir =  1;
 
     // Recycle off-screen
     const offScreen =
@@ -142,7 +212,6 @@ function _loop() {
       (p.shooting && p.opacity <= 0.01);
 
     if (offScreen) {
-      // Occasionally spawn a shooting particle instead
       if (!p.shooting && Math.random() < SHOOTING_CHANCE * 60) {
         _particles[i] = _createShootingParticle();
       } else {
@@ -151,7 +220,6 @@ function _loop() {
       continue;
     }
 
-    // Draw
     if (p.shooting) {
       _drawShootingParticle(p);
     } else {
@@ -170,7 +238,6 @@ function _drawDot(p) {
 }
 
 function _drawShootingParticle(p) {
-  // Draw a glowing dot with a trailing line
   const tailX = p.x - p.vx * p.tailLength;
   const tailY = p.y - p.vy * p.tailLength;
 
@@ -182,10 +249,9 @@ function _drawShootingParticle(p) {
   _ctx.moveTo(tailX, tailY);
   _ctx.lineTo(p.x, p.y);
   _ctx.strokeStyle = grad;
-  _ctx.lineWidth = p.size * 0.8;
+  _ctx.lineWidth   = p.size * 0.8;
   _ctx.stroke();
 
-  // Bright head
   _ctx.beginPath();
   _ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
   _ctx.fillStyle = _toRgba(p.color, p.opacity);
@@ -211,9 +277,7 @@ function _toRgba(hex, alpha) {
 
   if (h.startsWith('rgb')) {
     const nums = h.match(/[\d.]+/g);
-    if (nums && nums.length >= 3) {
-      return `rgba(${nums[0]},${nums[1]},${nums[2]},${alpha})`;
-    }
+    if (nums && nums.length >= 3) return `rgba(${nums[0]},${nums[1]},${nums[2]},${alpha})`;
   }
 
   let r = 0, g = 0, b = 0;

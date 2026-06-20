@@ -200,16 +200,34 @@ input, textarea, select {
 }
 
 .nav-dot {
-  width: 40px;
-  height: 40px;
+  width: 64px;
+  height: 44px;
   border-radius: 12px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   color: var(--text-secondary);
   background: transparent;
   border: 1px solid transparent;
   position: relative;
+  padding: 0;
+}
+
+.nav-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+  opacity: 0.7;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.nav-dot.active .nav-label {
+  opacity: 1;
 }
 
 .nav-dot svg {
@@ -688,9 +706,9 @@ input, textarea, select {
 }
 
 @media (max-width: 900px) {
-  #nav-dots { left: 10px; }
-  #nav-dots .nav-dot { width: 34px; height: 34px; border-radius: 10px; }
-  #panel { width: min(380px, calc(100vw - 60px)); }
+  #nav-dots { left: 8px; }
+  #nav-dots .nav-dot { width: 56px; height: 42px; border-radius: 10px; }
+  #panel { width: min(380px, calc(100vw - 76px)); }
 }
 
 /* ── Mobile layout (≤ 640px) ────────────────────────────────── */
@@ -725,6 +743,9 @@ input, textarea, select {
     flex: 1;
     max-width: 64px;
   }
+
+  /* Hide text labels on mobile — icons only in bottom bar */
+  .nav-label { display: none; }
 
   /* Active indicator becomes top bar instead of left bar */
   .nav-dot.active::before {

@@ -19,13 +19,16 @@ export const MEMORY_TYPES = {
 
 /**
  * Create or update the memory entry linked to a note.
- * Safe to call on every save — de-duplicates by noteId.
+ * Always reads the full note from DB — never trusts a partial changes object.
  */
-export async function upsertMemoryForNote(noteId, noteData) {
+export async function upsertMemoryForNote(noteId) {
   if (!noteId) return;
   try {
-    const content = _buildNoteContent(noteData);
-    const tags    = (noteData.tags ?? []).slice();
+    const note = await DB.notes.get(noteId);
+    if (!note) return;
+    const content  = _buildNoteContent(note);
+    const tags     = (note.tags ?? []).slice();
+    const isUpdate = !!(await DB.memories.getByRelatedId(noteId));
     await DB.memories.upsertByRelatedId(noteId, {
       type:      MEMORY_TYPES.NOTE,
       content,
@@ -33,7 +36,10 @@ export async function upsertMemoryForNote(noteId, noteData) {
       source:    'note',
       relatedId: noteId,
     });
-    Bus.emit(EVENTS.MEMORY_CREATED, { relatedId: noteId, type: MEMORY_TYPES.NOTE });
+    Bus.emit(isUpdate ? EVENTS.MEMORY_UPDATED : EVENTS.MEMORY_CREATED, {
+      relatedId: noteId,
+      type:      MEMORY_TYPES.NOTE,
+    });
   } catch (err) {
     console.error('[Memory] Failed to upsert note memory:', err);
   }
@@ -41,13 +47,16 @@ export async function upsertMemoryForNote(noteId, noteData) {
 
 /**
  * Create or update the memory entry linked to a task.
- * Safe to call on every save — de-duplicates by taskId.
+ * Always reads the full task from DB — never trusts a partial changes object.
  */
-export async function upsertMemoryForTask(taskId, taskData) {
+export async function upsertMemoryForTask(taskId) {
   if (!taskId) return;
   try {
-    const content = _buildTaskContent(taskData);
-    const tags    = _buildTaskTags(taskData);
+    const task = await DB.tasks.get(taskId);
+    if (!task) return;
+    const content  = _buildTaskContent(task);
+    const tags     = _buildTaskTags(task);
+    const isUpdate = !!(await DB.memories.getByRelatedId(taskId));
     await DB.memories.upsertByRelatedId(taskId, {
       type:      MEMORY_TYPES.TASK,
       content,
@@ -55,7 +64,10 @@ export async function upsertMemoryForTask(taskId, taskData) {
       source:    'task',
       relatedId: taskId,
     });
-    Bus.emit(EVENTS.MEMORY_CREATED, { relatedId: taskId, type: MEMORY_TYPES.TASK });
+    Bus.emit(isUpdate ? EVENTS.MEMORY_UPDATED : EVENTS.MEMORY_CREATED, {
+      relatedId: taskId,
+      type:      MEMORY_TYPES.TASK,
+    });
   } catch (err) {
     console.error('[Memory] Failed to upsert task memory:', err);
   }

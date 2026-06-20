@@ -35,7 +35,7 @@ export async function createNote(title, content, tags = [], pinned = false) {
   Bus.emit(EVENTS.FIRST_ACTION);
   pulseOrb();
   showToast('Note saved', 'success', 2000);
-  upsertMemoryForNote(id, { title, content, tags });
+  upsertMemoryForNote(id);
   return id;
 }
 
@@ -44,7 +44,7 @@ export async function updateNote(id, changes) {
   await logEvent(EVENT_TYPES.NOTE_UPDATED, `Note updated: "${changes.title ?? ''}"`, id, 'notes');
   Bus.emit(EVENTS.NOTE_UPDATED, { id });
   showToast('Note updated', 'success', 2000);
-  upsertMemoryForNote(id, changes);
+  upsertMemoryForNote(id);
 }
 
 export async function deleteNote(id) {
@@ -53,10 +53,20 @@ export async function deleteNote(id) {
   await logEvent(EVENT_TYPES.NOTE_DELETED, `Note deleted: "${note?.title ?? id}"`, id, 'notes');
   Bus.emit(EVENTS.NOTE_DELETED, { id });
   showToast('Note deleted', 'info', 2000);
+  _deleteLinkedMemory(id);
 }
 
 export async function searchNotes(query) {
   return DB.notes.search(query);
+}
+
+async function _deleteLinkedMemory(sourceId) {
+  try {
+    const mem = await DB.memories.getByRelatedId(sourceId);
+    if (mem) await DB.memories.delete(mem.id);
+  } catch (err) {
+    console.error('[Memory] Failed to delete linked memory:', err);
+  }
 }
 
 // ── Rendering ─────────────────────────────────────────────────

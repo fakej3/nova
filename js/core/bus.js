@@ -60,5 +60,6 @@ export const EVENTS = {
 
   // Memory (Phase 2)
   MEMORY_CREATED: 'memory:created',
+  MEMORY_UPDATED: 'memory:updated',
   MEMORY_DELETED: 'memory:deleted',
 };

@@ -36,7 +36,7 @@ export async function createTask(title, description = '', priority = 2, dueDate 
   Bus.emit(EVENTS.FIRST_ACTION);
   pulseOrb();
   showToast('Task created', 'success', 2000);
-  upsertMemoryForTask(id, { title, description, priority, dueDate, status: 'pending' });
+  upsertMemoryForTask(id);
   return id;
 }
 
@@ -57,7 +57,7 @@ export async function completeTask(id) {
     await logEvent(EVENT_TYPES.TASK_UPDATED, `Task reopened: "${task.title}"`, id, 'tasks');
     Bus.emit(EVENTS.TASK_UPDATED, { id });
     showToast('Task reopened', 'info', 2000);
-    upsertMemoryForTask(id, { ...task, status: 'pending', completedAt: null });
+    upsertMemoryForTask(id);
   } else {
     const completedAt = new Date().toISOString();
     await DB.tasks.update(id, { status: 'completed', completedAt });
@@ -65,7 +65,7 @@ export async function completeTask(id) {
     Bus.emit(EVENTS.TASK_COMPLETED, { id });
     pulseOrb();
     showToast('Task complete! 🎉', 'success', 2500);
-    upsertMemoryForTask(id, { ...task, status: 'completed', completedAt });
+    upsertMemoryForTask(id);
   }
 }
 
@@ -75,6 +75,16 @@ export async function deleteTask(id) {
   await logEvent(EVENT_TYPES.TASK_DELETED, `Task deleted: "${task?.title ?? id}"`, id, 'tasks');
   Bus.emit(EVENTS.TASK_DELETED, { id });
   showToast('Task deleted', 'info', 2000);
+  _deleteLinkedMemory(id);
+}
+
+async function _deleteLinkedMemory(sourceId) {
+  try {
+    const mem = await DB.memories.getByRelatedId(sourceId);
+    if (mem) await DB.memories.delete(mem.id);
+  } catch (err) {
+    console.error('[Memory] Failed to delete linked memory:', err);
+  }
 }
 
 // ── Rendering ─────────────────────────────────────────────────
@@ -302,7 +312,7 @@ async function _handleSave(id) {
       Bus.emit(EVENTS.TASK_COMPLETED, { id });
       pulseOrb();
     }
-    upsertMemoryForTask(id, changes);
+    upsertMemoryForTask(id);
   } else {
     await createTask(title, description, priority, dueDate);
   }

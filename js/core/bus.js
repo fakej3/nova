@@ -57,4 +57,8 @@ export const EVENTS = {
 
   // Install
   FIRST_ACTION:   'user:first_action',
+
+  // Memory (Phase 2)
+  MEMORY_CREATED: 'memory:created',
+  MEMORY_DELETED: 'memory:deleted',
 };

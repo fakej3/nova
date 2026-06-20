@@ -19,6 +19,7 @@ import { initNotes, renderNotesPanel } from '../modules/notes.js';
 import { initTasks, renderTasksPanel } from '../modules/tasks.js';
 import { initMouse }                   from '../ui/mouse.js';
 import { initHud }                     from '../ui/hud.js';
+import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -78,6 +79,9 @@ async function boot() {
     // 11. PWA install prompt
     await initInstallPrompt();
     _wireInstallIndicator();
+
+    // 11b. Wire diagnostics panel (Phase 2)
+    _wireDiagnostics();
 
     // 12. Done
     State.set('initialized', true);
@@ -327,6 +331,9 @@ function _openSettings() {
   // Render install section with current state every time settings opens
   renderInstallSection();
 
+  // Render diagnostics panel with fresh data every time settings opens
+  renderDiagnosticsPanel();
+
   if (modal) modal.hidden = false;
   aiInput?.focus();
 }
@@ -360,6 +367,13 @@ async function _saveSettings() {
 function _updateAiNameDisplay() {
   const el = document.getElementById('ai-name-display');
   if (el) el.textContent = State.get('aiName') || 'NOVA';
+}
+
+// ── Diagnostics ───────────────────────────────────────────────
+
+function _wireDiagnostics() {
+  // Diagnostics panel re-renders whenever Settings opens (handled in _openSettings).
+  // Nothing else to wire at boot — it's a pull-only panel.
 }
 
 // ── Install indicator ─────────────────────────────────────────

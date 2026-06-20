@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-v4';
+const CACHE_NAME = 'nova-v5';
 
 const ASSETS = [
   './index.html',
@@ -14,12 +14,16 @@ const ASSETS = [
   './js/core/bus.js',
   './js/core/utils.js',
   './js/services/events.js',
+  './js/services/memory.js',
+  './js/services/context.js',
+  './js/services/search.js',
   './js/ui/orb.js',
   './js/ui/theme.js',
   './js/ui/clock.js',
   './js/ui/particles.js',
   './js/ui/toast.js',
   './js/ui/install.js',
+  './js/ui/diagnostics.js',
   './js/modules/notes.js',
   './js/modules/tasks.js',
   './js/ui/mouse.js',

@@ -6,7 +6,7 @@
  */
 
 const DB_NAME    = 'nova_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let _db = null;
 
@@ -53,6 +53,7 @@ function openDB() {
       const oldVersion = event.oldVersion;
 
       // Migration ladder — add a new "if (oldVersion < N)" block for each version bump.
+
       if (oldVersion < 1) {
         // ── notes ───────────────────────────────────────────
         const notes = db.createObjectStore('notes', { keyPath: 'id' });
@@ -77,7 +78,13 @@ function openDB() {
         db.createObjectStore('settings', { keyPath: 'key' });
       }
 
-      // if (oldVersion < 2) { /* add Phase 2 stores here */ }
+      if (oldVersion < 2) {
+        // ── memories (Phase 2) ──────────────────────────────
+        const memories = db.createObjectStore('memories', { keyPath: 'id' });
+        memories.createIndex('type',      'type',      { unique: false });
+        memories.createIndex('timestamp', 'timestamp', { unique: false });
+        memories.createIndex('source',    'source',    { unique: false });
+      }
     };
 
     req.onsuccess  = (e) => { _db = e.target.result; resolve(_db); };
@@ -139,6 +146,10 @@ const notes = {
     return storeReq('notes', 'readwrite', (store) => reqToPromise(store.delete(id)));
   },
 
+  async count() {
+    return storeReq('notes', 'readonly', (store) => reqToPromise(store.count()));
+  },
+
   async search(query, limit = 500) {
     const all = await notes.getAll();
     if (!query || !query.trim()) return all;
@@ -196,6 +207,10 @@ const tasks = {
     });
   },
 
+  async count() {
+    return storeReq('tasks', 'readonly', (store) => reqToPromise(store.count()));
+  },
+
   async update(id, changes) {
     return txWrite('tasks', (store) => {
       return reqToPromise(store.get(id)).then((existing) => {
@@ -231,7 +246,7 @@ const events = {
     return storeReq('events', 'readonly', (store) => reqToPromise(store.getAll()));
   },
 
-  // Uses timestamp index with a reverse cursor — O(limit) instead of O(total).
+  // O(limit) via reverse cursor on timestamp index.
   async getRecent(limit = 50) {
     return getDB().then((db) => new Promise((resolve, reject) => {
       const store   = db.transaction('events', 'readonly').objectStore('events');
@@ -240,15 +255,117 @@ const events = {
       const req     = index.openCursor(null, 'prev');
       req.onsuccess = (e) => {
         const cursor = e.target.result;
-        if (!cursor || results.length >= limit) {
-          resolve(results);
-          return;
-        }
+        if (!cursor || results.length >= limit) { resolve(results); return; }
         results.push(cursor.value);
         cursor.continue();
       };
       req.onerror = (e) => reject(e.target.error);
     }));
+  },
+
+  // Query events within an ISO timestamp range (inclusive).
+  async getByDateRange(startIso, endIso) {
+    return getDB().then((db) => new Promise((resolve, reject) => {
+      const store   = db.transaction('events', 'readonly').objectStore('events');
+      const index   = store.index('timestamp');
+      const range   = IDBKeyRange.bound(startIso, endIso);
+      const results = [];
+      const req     = index.openCursor(range, 'prev');
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor) { resolve(results); return; }
+        results.push(cursor.value);
+        cursor.continue();
+      };
+      req.onerror = (e) => reject(e.target.error);
+    }));
+  },
+
+  // Query events by type using the type index.
+  async getByType(type) {
+    return storeReq('events', 'readonly', (store) => {
+      const index = store.index('type');
+      return reqToPromise(index.getAll(IDBKeyRange.only(type)));
+    });
+  },
+
+  async count() {
+    return storeReq('events', 'readonly', (store) => reqToPromise(store.count()));
+  },
+};
+
+// ── Memories ──────────────────────────────────────────────────
+
+const memories = {
+  async create(data) {
+    const id = newId();
+    const memory = {
+      id,
+      type:      data.type      ?? 'memory',  // note | task | event | memory
+      content:   data.content   ?? '',
+      timestamp: now(),
+      tags:      data.tags      ?? [],
+      source:    data.source    ?? 'user',
+    };
+    await storeReq('memories', 'readwrite', (store) => reqToPromise(store.add(memory)));
+    return id;
+  },
+
+  async get(id) {
+    return storeReq('memories', 'readonly', (store) => reqToPromise(store.get(id)));
+  },
+
+  async getAll() {
+    return storeReq('memories', 'readonly', (store) => reqToPromise(store.getAll()));
+  },
+
+  async getByType(type) {
+    return storeReq('memories', 'readonly', (store) => {
+      const index = store.index('type');
+      return reqToPromise(index.getAll(IDBKeyRange.only(type)));
+    });
+  },
+
+  async getRecent(limit = 20) {
+    return getDB().then((db) => new Promise((resolve, reject) => {
+      const store   = db.transaction('memories', 'readonly').objectStore('memories');
+      const index   = store.index('timestamp');
+      const results = [];
+      const req     = index.openCursor(null, 'prev');
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (!cursor || results.length >= limit) { resolve(results); return; }
+        results.push(cursor.value);
+        cursor.continue();
+      };
+      req.onerror = (e) => reject(e.target.error);
+    }));
+  },
+
+  async delete(id) {
+    return storeReq('memories', 'readwrite', (store) => reqToPromise(store.delete(id)));
+  },
+
+  async count() {
+    return storeReq('memories', 'readonly', (store) => reqToPromise(store.count()));
+  },
+
+  async search(query, limit = 200) {
+    const all = await memories.getAll();
+    if (!query || !query.trim()) return all;
+    const q = query.trim().toLowerCase();
+    const results = [];
+    for (const m of all) {
+      if (results.length >= limit) break;
+      if (
+        m.content.toLowerCase().includes(q) ||
+        m.tags.some((t) => t.toLowerCase().includes(q)) ||
+        m.type.toLowerCase().includes(q)
+      ) {
+        results.push(m);
+      }
+    }
+    return results;
   },
 };
 
@@ -279,5 +396,6 @@ export const DB = {
   notes,
   tasks,
   events,
+  memories,
   settings,
 };

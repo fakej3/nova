@@ -1127,3 +1127,208 @@ details[open] .diag-summary::before { content: '▼ '; }
 .diag-yes     { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--status-success); border-bottom: 1px solid var(--border-color); }
 .diag-no      { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--status-error);   border-bottom: 1px solid var(--border-color); }
 .diag-unknown { padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--text-muted);     border-bottom: 1px solid var(--border-color); }
+
+/* ── System Diagnostics panel (Phase 2) ─────────────────────── */
+
+.diag-loading {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 12px 0;
+}
+
+.diag-error {
+  font-size: 12px;
+  color: var(--status-error);
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+}
+
+/* Count grid */
+.diag-counts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.diag-count-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.diag-count-icon {
+  font-size: 14px;
+  color: var(--accent-primary);
+  line-height: 1;
+}
+
+.diag-count-num {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.diag-count-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Context snapshot panel */
+.diag-context-panel {
+  margin-bottom: 12px;
+}
+
+.diag-context-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 4px 0;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+}
+
+.diag-val {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.diag-activity-list {
+  border-top: 1px solid var(--border-color);
+  padding: 4px 0;
+  background: var(--bg-primary);
+}
+
+.diag-activity-row {
+  display: flex;
+  gap: 8px;
+  padding: 4px 12px;
+  align-items: baseline;
+}
+
+.diag-activity-type {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.diag-activity-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Search block */
+.diag-search-block {
+  margin-bottom: 12px;
+}
+
+.diag-search-block .diag-label {
+  display: block;
+  padding: 0 0 6px 0;
+  border-bottom: none;
+}
+
+.diag-search-results {
+  margin-top: 8px;
+}
+
+.diag-searching,
+.diag-no-results {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.diag-result-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.diag-result-row:last-child { border-bottom: none; }
+
+.diag-result-type {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.diag-result-type--note   { background: rgba(var(--orb-color-rgb), 0.12); color: var(--accent-primary); }
+.diag-result-type--task   { background: rgba(34, 197, 94, 0.12);          color: var(--status-success); }
+.diag-result-type--event  { background: rgba(245, 158, 11, 0.12);         color: var(--status-warning); }
+.diag-result-type--memory { background: rgba(168, 85, 247, 0.12);         color: #a855f7; }
+
+.diag-result-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.diag-result-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diag-result-excerpt {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diag-result-score {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* Footer */
+.diag-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.diag-footer .diag-label {
+  padding: 0;
+  border-bottom: none;
+  color: var(--text-muted);
+  font-size: 10px;
+}

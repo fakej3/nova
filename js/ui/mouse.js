@@ -94,11 +94,10 @@ function _applyParallax(dx, dy) {
   for (const { el, mul } of _els) {
     const x = dx * MAX_SHIFT * mul;
     const y = dy * MAX_SHIFT * mul;
-    // Compose with existing animation — use a CSS variable trick instead
-    // We set a data attribute and use will-change:transform already
-    el.style.setProperty('--px', `${x.toFixed(2)}px`);
-    el.style.setProperty('--py', `${y.toFixed(2)}px`);
-    el.style.transform = `translate(var(--px, 0px), var(--py, 0px))`;
+    // Use the CSS `translate` property — independent from `transform` in the cascade.
+    // CSS @keyframes animations set `transform` (scale/rotate); this sets `translate`.
+    // Both apply simultaneously so orb animations are not disrupted.
+    el.style.translate = `${x.toFixed(2)}px ${y.toFixed(2)}px`;
   }
 }
 

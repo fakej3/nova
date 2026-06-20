@@ -9,6 +9,7 @@ import { logEvent, EVENT_TYPES } from '../services/events.js';
 import { showToast } from '../ui/toast.js';
 import { pulseOrb } from '../ui/orb.js';
 import { escHtml } from '../core/utils.js';
+import { upsertMemoryForTask } from '../services/memory.js';
 
 let _panelContent   = null;
 let _activeFilter   = 'all';  // all | pending | in_progress | completed
@@ -35,6 +36,7 @@ export async function createTask(title, description = '', priority = 2, dueDate 
   Bus.emit(EVENTS.FIRST_ACTION);
   pulseOrb();
   showToast('Task created', 'success', 2000);
+  upsertMemoryForTask(id, { title, description, priority, dueDate, status: 'pending' });
   return id;
 }
 
@@ -55,12 +57,15 @@ export async function completeTask(id) {
     await logEvent(EVENT_TYPES.TASK_UPDATED, `Task reopened: "${task.title}"`, id, 'tasks');
     Bus.emit(EVENTS.TASK_UPDATED, { id });
     showToast('Task reopened', 'info', 2000);
+    upsertMemoryForTask(id, { ...task, status: 'pending', completedAt: null });
   } else {
-    await DB.tasks.update(id, { status: 'completed', completedAt: new Date().toISOString() });
+    const completedAt = new Date().toISOString();
+    await DB.tasks.update(id, { status: 'completed', completedAt });
     await logEvent(EVENT_TYPES.TASK_COMPLETED, `Task completed: "${task.title}"`, id, 'tasks');
     Bus.emit(EVENTS.TASK_COMPLETED, { id });
     pulseOrb();
     showToast('Task complete! 🎉', 'success', 2500);
+    upsertMemoryForTask(id, { ...task, status: 'completed', completedAt });
   }
 }
 
@@ -297,6 +302,7 @@ async function _handleSave(id) {
       Bus.emit(EVENTS.TASK_COMPLETED, { id });
       pulseOrb();
     }
+    upsertMemoryForTask(id, changes);
   } else {
     await createTask(title, description, priority, dueDate);
   }

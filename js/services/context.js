@@ -20,18 +20,29 @@ export async function buildContext() {
     allTasksCount,
     recentEvents,
     memoriesCount,
+    recentMemories,
   ] = await Promise.all([
     DB.notes.count(),
     DB.tasks.getByStatus('pending'),
     DB.tasks.count(),
     DB.events.getRecent(10),
     DB.memories.count(),
+    DB.memories.getRecent(5),
   ]);
 
   const recentActivity = recentEvents.map((e) => ({
     type:        e.type,
     description: e.description,
     timestamp:   e.timestamp,
+  }));
+
+  const memorySummaries = recentMemories.map((m) => ({
+    id:        m.id,
+    type:      m.type,
+    content:   m.content.slice(0, 120),
+    source:    m.source,
+    timestamp: m.updatedAt ?? m.timestamp,
+    relatedId: m.relatedId ?? null,
   }));
 
   return {
@@ -43,6 +54,7 @@ export async function buildContext() {
     pending_tasks_count: pendingTasks?.length ?? 0,
     total_tasks_count:   allTasksCount ?? 0,
     memories_count:      memoriesCount ?? 0,
+    recent_memories:     memorySummaries,
     recent_activity:     recentActivity,
   };
 }

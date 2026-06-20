@@ -9,6 +9,7 @@ import { logEvent, EVENT_TYPES } from '../services/events.js';
 import { showToast } from '../ui/toast.js';
 import { pulseOrb } from '../ui/orb.js';
 import { escHtml } from '../core/utils.js';
+import { upsertMemoryForNote } from '../services/memory.js';
 
 let _panelContent = null;
 let _currentView  = 'list'; // list | editor
@@ -34,6 +35,7 @@ export async function createNote(title, content, tags = [], pinned = false) {
   Bus.emit(EVENTS.FIRST_ACTION);
   pulseOrb();
   showToast('Note saved', 'success', 2000);
+  upsertMemoryForNote(id, { title, content, tags });
   return id;
 }
 
@@ -42,6 +44,7 @@ export async function updateNote(id, changes) {
   await logEvent(EVENT_TYPES.NOTE_UPDATED, `Note updated: "${changes.title ?? ''}"`, id, 'notes');
   Bus.emit(EVENTS.NOTE_UPDATED, { id });
   showToast('Note updated', 'success', 2000);
+  upsertMemoryForNote(id, changes);
 }
 
 export async function deleteNote(id) {

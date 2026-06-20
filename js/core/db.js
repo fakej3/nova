@@ -6,7 +6,7 @@
  */
 
 const DB_NAME    = 'nova_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db = null;
 
@@ -84,6 +84,12 @@ function openDB() {
         memories.createIndex('type',      'type',      { unique: false });
         memories.createIndex('timestamp', 'timestamp', { unique: false });
         memories.createIndex('source',    'source',    { unique: false });
+      }
+
+      if (oldVersion < 3) {
+        // Add relatedId index to memories for de-duplicated upserts (Phase 2.5)
+        const memoriesStore = event.target.transaction.objectStore('memories');
+        memoriesStore.createIndex('relatedId', 'relatedId', { unique: false });
       }
     };
 
@@ -299,13 +305,16 @@ const events = {
 const memories = {
   async create(data) {
     const id = newId();
+    const ts = now();
     const memory = {
       id,
       type:      data.type      ?? 'memory',  // note | task | event | memory
       content:   data.content   ?? '',
-      timestamp: now(),
+      timestamp: ts,
+      updatedAt: ts,
       tags:      data.tags      ?? [],
       source:    data.source    ?? 'user',
+      relatedId: data.relatedId ?? null,
     };
     await storeReq('memories', 'readwrite', (store) => reqToPromise(store.add(memory)));
     return id;
@@ -326,20 +335,45 @@ const memories = {
     });
   },
 
-  async getRecent(limit = 20) {
-    return getDB().then((db) => new Promise((resolve, reject) => {
-      const store   = db.transaction('memories', 'readonly').objectStore('memories');
-      const index   = store.index('timestamp');
-      const results = [];
-      const req     = index.openCursor(null, 'prev');
-      req.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (!cursor || results.length >= limit) { resolve(results); return; }
-        results.push(cursor.value);
-        cursor.continue();
+  // Find the single memory linked to a source record (note id, task id, etc.)
+  async getByRelatedId(relatedId) {
+    if (!relatedId) return null;
+    const results = await storeReq('memories', 'readonly', (store) => {
+      const index = store.index('relatedId');
+      return reqToPromise(index.getAll(IDBKeyRange.only(relatedId)));
+    });
+    return results?.[0] ?? null;
+  },
+
+  // Create or update a memory keyed by relatedId.
+  // Preserves the original timestamp; bumps updatedAt on every edit.
+  async upsertByRelatedId(relatedId, data) {
+    const existing = await memories.getByRelatedId(relatedId);
+    if (existing) {
+      const updated = {
+        ...existing,
+        ...data,
+        id:        existing.id,
+        relatedId,
+        timestamp: existing.timestamp,  // preserve creation time
+        updatedAt: now(),
       };
-      req.onerror = (e) => reject(e.target.error);
-    }));
+      await storeReq('memories', 'readwrite', (store) => reqToPromise(store.put(updated)));
+      return existing.id;
+    }
+    return memories.create({ ...data, relatedId });
+  },
+
+  // Sort by updatedAt so recently-touched memories surface first.
+  async getRecent(limit = 20) {
+    const all = await memories.getAll();
+    return all
+      .sort((a, b) => {
+        const ta = a.updatedAt ?? a.timestamp;
+        const tb = b.updatedAt ?? b.timestamp;
+        return tb > ta ? 1 : -1;
+      })
+      .slice(0, limit);
   },
 
   async delete(id) {

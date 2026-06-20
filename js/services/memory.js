@@ -2,7 +2,7 @@
  * NOVA Memory Engine
  * Service layer for the memories store.
  * Memories are discrete, typed facts the system accumulates over time.
- * They will feed Phase 3 AI context — for now they are stored and queryable.
+ * Phase 2.5: auto-populated from note and task activity via upsert (de-duplicated).
  */
 
 import { DB }          from '../core/db.js';
@@ -15,13 +15,94 @@ export const MEMORY_TYPES = {
   MEMORY: 'memory',
 };
 
+// ── Auto-wiring: called from notes.js and tasks.js ────────────
+
 /**
- * Save a new memory entry.
- * @param {string} type    - One of MEMORY_TYPES
- * @param {string} content - The memory content
- * @param {string[]} tags  - Optional tags
- * @param {string} source  - Where this memory came from (e.g. 'user', 'system', 'note')
+ * Create or update the memory entry linked to a note.
+ * Safe to call on every save — de-duplicates by noteId.
  */
+export async function upsertMemoryForNote(noteId, noteData) {
+  if (!noteId) return;
+  try {
+    const content = _buildNoteContent(noteData);
+    const tags    = (noteData.tags ?? []).slice();
+    await DB.memories.upsertByRelatedId(noteId, {
+      type:      MEMORY_TYPES.NOTE,
+      content,
+      tags,
+      source:    'note',
+      relatedId: noteId,
+    });
+    Bus.emit(EVENTS.MEMORY_CREATED, { relatedId: noteId, type: MEMORY_TYPES.NOTE });
+  } catch (err) {
+    console.error('[Memory] Failed to upsert note memory:', err);
+  }
+}
+
+/**
+ * Create or update the memory entry linked to a task.
+ * Safe to call on every save — de-duplicates by taskId.
+ */
+export async function upsertMemoryForTask(taskId, taskData) {
+  if (!taskId) return;
+  try {
+    const content = _buildTaskContent(taskData);
+    const tags    = _buildTaskTags(taskData);
+    await DB.memories.upsertByRelatedId(taskId, {
+      type:      MEMORY_TYPES.TASK,
+      content,
+      tags,
+      source:    'task',
+      relatedId: taskId,
+    });
+    Bus.emit(EVENTS.MEMORY_CREATED, { relatedId: taskId, type: MEMORY_TYPES.TASK });
+  } catch (err) {
+    console.error('[Memory] Failed to upsert task memory:', err);
+  }
+}
+
+// ── Content builders ──────────────────────────────────────────
+
+function _buildNoteContent(data) {
+  const title   = data.title   ?? '';
+  const content = data.content ?? '';
+  const tags    = data.tags    ?? [];
+  const summary = content.replace(/\n/g, ' ').trim().slice(0, 100);
+
+  const parts = [`Note: "${title || 'Untitled'}"`];
+  if (summary) parts.push(`Summary: ${summary}${content.length > 100 ? '…' : ''}`);
+  if (tags.length) parts.push(`Tags: ${tags.join(', ')}`);
+  return parts.join(' | ');
+}
+
+function _buildTaskContent(data) {
+  const title       = data.title       ?? '';
+  const status      = data.status      ?? 'pending';
+  const priority    = data.priority    ?? 2;
+  const description = data.description ?? '';
+  const dueDate     = data.dueDate     ?? null;
+  const completedAt = data.completedAt ?? null;
+
+  const priorityLabel = priority === 1 ? 'High' : priority === 3 ? 'Low' : 'Medium';
+  const parts = [`Task: "${title || 'Untitled'}"`];
+  parts.push(`Status: ${status}`);
+  parts.push(`Priority: ${priorityLabel}`);
+  if (dueDate) parts.push(`Due: ${dueDate}`);
+  if (completedAt) parts.push(`Completed: ${new Date(completedAt).toLocaleDateString()}`);
+  if (description) parts.push(`Notes: ${description.slice(0, 80)}${description.length > 80 ? '…' : ''}`);
+  return parts.join(' | ');
+}
+
+function _buildTaskTags(data) {
+  const tags = ['task'];
+  if (data.status) tags.push(data.status.replace('_', '-'));
+  if (data.priority === 1) tags.push('high-priority');
+  if (data.completedAt) tags.push('completed');
+  return tags;
+}
+
+// ── General public API ────────────────────────────────────────
+
 export async function rememberFact(type, content, tags = [], source = 'user') {
   if (!content?.trim()) return null;
   try {

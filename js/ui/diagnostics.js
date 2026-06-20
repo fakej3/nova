@@ -1,6 +1,6 @@
 /**
  * NOVA Diagnostics Panel
- * Developer view — live counts for all data stores + context snapshot.
+ * Developer view — live counts, context snapshot, recent memories, cross-store search.
  * Accessible from Settings. No production features here.
  */
 
@@ -27,9 +27,9 @@ export async function renderDiagnosticsPanel() {
     ]);
 
     container.innerHTML = _htmlPanel({
-      notesCount:    notesCount   ?? 0,
-      tasksCount:    tasksCount   ?? 0,
-      eventsCount:   eventsCount  ?? 0,
+      notesCount:    notesCount    ?? 0,
+      tasksCount:    tasksCount    ?? 0,
+      eventsCount:   eventsCount   ?? 0,
       memoriesCount: memoriesCount ?? 0,
       ctx,
     });
@@ -115,6 +115,8 @@ function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, ctx })
       ` : ''}
     </details>
 
+    ${_htmlMemoryList(ctx.recent_memories)}
+
     <div class="diag-search-block">
       <label class="diag-label" for="diag-search-input">Search all stores</label>
       <input
@@ -131,6 +133,37 @@ function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, ctx })
       <span class="diag-label">Generated at ${escHtml(new Date().toLocaleTimeString())}</span>
       <button id="diag-refresh-btn" class="btn btn-ghost btn-sm">↺ Refresh</button>
     </div>
+  `;
+}
+
+function _htmlMemoryList(memories) {
+  if (!memories || memories.length === 0) {
+    return `
+      <details class="diag-panel diag-memory-panel">
+        <summary class="diag-summary">Recent Memories</summary>
+        <div class="diag-empty-memories">
+          No memories yet. Create a note or task to generate the first memory.
+        </div>
+      </details>
+    `;
+  }
+
+  const rows = memories.map((m) => `
+    <div class="mem-row">
+      <div class="mem-header">
+        <span class="mem-type mem-type--${escHtml(m.type)}">${escHtml(m.type)}</span>
+        <span class="mem-source">${escHtml(m.source)}</span>
+        <span class="mem-ts">${_relativeTime(m.timestamp)}</span>
+      </div>
+      <div class="mem-content">${escHtml(m.content)}</div>
+    </div>
+  `).join('');
+
+  return `
+    <details class="diag-panel diag-memory-panel" open>
+      <summary class="diag-summary">Recent Memories (${memories.length})</summary>
+      <div class="mem-list">${rows}</div>
+    </details>
   `;
 }
 
@@ -160,4 +193,13 @@ function _resultRow(r) {
 
 function _fmt(type) {
   return (type ?? '').replace(/_/g, ' ');
+}
+
+function _relativeTime(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60_000)     return 'just now';
+  if (diff < 3_600_000)  return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }

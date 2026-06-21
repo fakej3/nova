@@ -587,50 +587,21 @@ input, textarea, select {
   z-index: 6;
 }
 
-/* Corner brackets */
+/* Corner brackets — static chrome, no animation */
 .hud-corner {
   position: absolute;
   width: 28px;
   height: 28px;
-  opacity: 0.3;
-  animation: corner-breathe 5s ease-in-out infinite;
+  opacity: 0.10;
 }
 
 .corner-tl { top: 18px;    left: 18px;    border-top: 1px solid var(--accent-primary); border-left:  1px solid var(--accent-primary); }
-.corner-tr { top: 18px;    right: 18px;   border-top: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); animation-delay: 1.25s; }
-.corner-bl { bottom: 18px; left: 18px;    border-bottom: 1px solid var(--accent-primary); border-left:  1px solid var(--accent-primary); animation-delay: 2.5s; }
-.corner-br { bottom: 18px; right: 18px;   border-bottom: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); animation-delay: 3.75s; }
+.corner-tr { top: 18px;    right: 18px;   border-top: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); }
+.corner-bl { bottom: 18px; left: 18px;    border-bottom: 1px solid var(--accent-primary); border-left:  1px solid var(--accent-primary); }
+.corner-br { bottom: 18px; right: 18px;   border-bottom: 1px solid var(--accent-primary); border-right: 1px solid var(--accent-primary); }
 
-@keyframes corner-breathe {
-  0%, 100% { opacity: 0.22; }
-  50%       { opacity: 0.42; }
-}
-
-/* Screen scan line — sweeps top to bottom every 12s */
-#scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(var(--orb-color-rgb), 0.12) 20%,
-    rgba(var(--orb-color-rgb), 0.25) 50%,
-    rgba(var(--orb-color-rgb), 0.12) 80%,
-    transparent 100%
-  );
-  animation: scan-sweep 12s linear infinite;
-  animation-delay: 3s;
-}
-
-@keyframes scan-sweep {
-  0%   { top: -1px;   opacity: 0; }
-  4%   { opacity: 1; }
-  96%  { opacity: 1; }
-  100% { top: 100vh;  opacity: 0; }
-}
+/* Screen scan line — hidden; scan motion happens inside the orb HUD canvas */
+#scan-line { display: none; }
 
 /* Contextual greeting */
 #nova-greeting {

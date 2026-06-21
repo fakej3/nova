@@ -266,7 +266,7 @@ function _loop() {
   angDiff = ((angDiff % TWO_PI) + Math.PI * 3) % TWO_PI - Math.PI;
   // Idle curiosity type 1: scanner override (briefly reverses)
   const scanDir = (_curiosityActive && _curiosityType === 1) ? -1 : 1;
-  const cursorPull = _hoverZone >= 2 ? angDiff * 0.0008 : angDiff * 0.00015;
+  const cursorPull = _hoverZone >= 2 ? angDiff * 0.0016 : angDiff * 0.00030;
   _scanAngle += (scanDir * _scanSpeed + cursorPull) * _awIdleMul * _awTimeMod;
 
   // Ring decay
@@ -293,7 +293,6 @@ function _loop() {
   _drawScanner(outerDim);
   _drawFlowPulses();
   _drawPulses();
-  _drawCardinalLabels(outerDim);
 
   requestAnimationFrame(_loop);
 }

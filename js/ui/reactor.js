@@ -1,18 +1,24 @@
 /**
- * NOVA Reactor Core — Intelligence Engine
+ * NOVA Reactor Core v27 — Stellar Navigation System / AI Star Map
  *
  * Draw order (back → front):
- *   0  Polar grid               — precision reference structure
- *   1  Radial spokes            — 8 lines nucleus → containment
- *   2  Inner geo ring           — 4 segs, fast CW
- *   3  Mid geo ring             — 4 segs, slow CCW
- *   4  Containment ring         — 5 segs, primary structure, 2-3 passes
- *   5  Outer geo ring           — 3 segs, very slow CCW
- *   6  Arc fragments            — 3 drifting arcs
- *   7  Chamber glow             — cursor-aware offset fill, additive
- *   8  Inner glow               — nucleus halo, additive
- *   9  Nucleus hard point       — THE focal element, always bright
- *  10  Surge overlay            — rare events 30–120 s
+ *   0  Polar reference grid       — concentric guide circles + 16 radials
+ *   1  Atmosphere boundary        — faint outer ring
+ *   2  Containment ring           — 8 segments, dense tick marks, primary structure
+ *   3  Outer geo ring             — 3 long segments, very slow CCW
+ *   4  Radar sweep                — slow sector + bright arm
+ *   5  Mid data ring              — 4 segments, cardinal ticks
+ *   6  Inner tech ring            — 6 segments, faster CCW
+ *   7  Orbital satellites         — 5 dots on ring paths, additive
+ *   8  Core ring                  — 4 segments near nucleus, fast CW
+ *   9  Inner glow                 — compact halo, NOT a sphere
+ *  10  Reticle                    — crosshair ring + 4 short arm ticks
+ *  11  Nucleus                    — bright compact star point
+ *  12  Cursor shimmer             — subtle cursor-aware offset fill
+ *  13  Surge overlay              — rare events 45–120 s
+ *
+ * Color system: canvas cycles independently between electric blue and warm
+ * gold every ~45s. No CSS var dependency — completely self-contained.
  */
 
 import { Bus, EVENTS }  from '../core/bus.js';
@@ -21,23 +27,36 @@ import { getAwareness } from './awareness.js';
 
 const TWO_PI = Math.PI * 2;
 
-const STATE_ENERGY = {
-  idle:       0.26,
-  listening:  0.58,
-  thinking:   0.96,
-  responding: 0.80,
-  success:    0.65,
-  error:      0.42,
-  offline:    0.06,
+// ── Color system ─────────────────────────────────────────────
+// Two anchor colors. Canvas cycles between them smoothly.
+const COL_BLUE = [0,   148, 255];   // deep electric blue
+const COL_GOLD = [200, 148,  38];   // warm amber/gold
+
+// ~90s full blue→gold→blue cycle at 60fps: 2π/(90×60) ≈ 0.00116
+const BLEND_SPEED = 0.00116;
+
+// ── Geometry (fractions of canvas width) ─────────────────────
+const R = {
+  NUCLEUS:  0.034,
+  RETICLE:  0.068,
+  CORE:     0.118,
+  INNER:    0.188,
+  MID:      0.272,
+  OUTER:    0.358,
+  CONTAIN:  0.432,
+  ATM:      0.490,
 };
 
-const R_NUC_PT   = 0.058;
-const R_NUC_IG   = 0.120;
-const R_INNER    = 0.165;
-const R_MID      = 0.235;
-const R_CONT     = 0.305;
-const R_OUTER    = 0.390;
-const R_ATM      = 0.460;
+// ── State energy levels ───────────────────────────────────────
+const STATE_ENERGY = {
+  idle:       0.28,
+  listening:  0.62,
+  thinking:   0.96,
+  responding: 0.80,
+  success:    0.60,
+  error:      0.38,
+  offline:    0.05,
+};
 
 let _canvas   = null;
 let _ctx      = null;
@@ -45,65 +64,46 @@ let _dpr      = 1;
 let _rafId    = null;
 let _reduced  = false;
 let _isMobile = false;
-let _colorRgb = '0, 212, 255';
 
-let _t      = 0;
-let _energy = 0.32;
-let _thinkP = 0;
+let _t          = 0;
+let _energy     = 0.30;
+let _thinkP     = 0;
+let _blendPhase = 0;
 
 let _curNX = 0;
 let _curNY = 0;
+let _awIdleLevel = 0;
+
+// Ring rotation angles
+let _coreAng  = 0;
+let _innerAng = 0;
+let _midAng   = 0;
+let _outerAng = 0;
+let _contAng  = 0;
+let _sweepAng = 0;
+
+// Orbital satellites — one per ring track
+const _SATS = [
+  { rFr: 0.118, speed:  0.00700, phase: 0.00, size: 1.65 },
+  { rFr: 0.188, speed: -0.00350, phase: 2.09, size: 1.80 },
+  { rFr: 0.272, speed:  0.00175, phase: 4.19, size: 1.55 },
+  { rFr: 0.358, speed: -0.00088, phase: 1.05, size: 1.40 },
+  { rFr: 0.432, speed:  0.00044, phase: 3.14, size: 1.30 },
+];
+
+// Surge event system
+let _surgePhase = 0;
+let _surgeLevel = 0;
+let _surgeType  = 0;
+let _surgeBorn  = 0;
+let _surgeNext  = Date.now() + _rnd(50000, 120000);
+
+// ── Public API ────────────────────────────────────────────────
 
 export function setReactorCursor(nx, ny) {
   _curNX = nx;
   _curNY = ny;
 }
-
-let _gA0 = Math.random() * TWO_PI;
-let _gA1 = Math.random() * TWO_PI;
-let _gA2 = Math.random() * TWO_PI;
-let _contAng  = Math.random() * TWO_PI;
-let _innerAng = Math.random() * TWO_PI;
-let _sweepAng = Math.random() * TWO_PI;
-
-const _orbParticles = [
-  { rFr: R_INNER, vel:  0.0028, ph: 0.00 },
-  { rFr: R_MID,   vel: -0.0016, ph: 1.57 },
-  { rFr: R_CONT,  vel:  0.0010, ph: 3.14 },
-  { rFr: R_OUTER, vel: -0.0006, ph: 4.71 },
-];
-
-const _arcFrags = Array.from({ length: 3 }, (_, i) => ({
-  ang:  Math.random() * TWO_PI,
-  span: 0.28 + Math.random() * 0.30,
-  r:    [0.192, 0.248, 0.278][i] + (Math.random() - 0.5) * 0.018,
-  vel:  (i % 2 === 0 ? 1 : -1) * (0.00020 + Math.random() * 0.00014),
-  base: 0.018 + Math.random() * 0.006,
-  ph:   Math.random() * TWO_PI,
-}));
-
-let _awIdleLevel = 0;
-
-let _surgePhase = 0;
-let _surgeLevel = 0;
-let _surgeType  = 0;
-let _surgeBorn  = 0;
-let _surgeNext  = Date.now() + _rnd(30000, 120000);
-
-const _GEO = [
-  { rFr: R_INNER, segs: 4, gapF: 0.155, speed:  0.0035, lw: 0.9, base: 0.32 },
-  { rFr: R_MID,   segs: 4, gapF: 0.145, speed: -0.0018, lw: 0.7, base: 0.20 },
-  { rFr: R_OUTER, segs: 3, gapF: 0.185, speed: -0.0007, lw: 0.55, base: 0.10 },
-];
-
-const _geoGaps = _GEO.map(g =>
-  Array.from({ length: g.segs }, () => g.gapF * (0.70 + Math.random() * 0.60))
-);
-
-const CONT_SEGS = 5;
-const _contGaps = Array.from({ length: CONT_SEGS }, () =>
-  0.055 + Math.random() * 0.085
-);
 
 export function initReactor() {
   _reduced  = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -112,6 +112,7 @@ export function initReactor() {
   const orb = document.getElementById('orb');
   if (!orb) return;
 
+  // Hide CSS-rendered core element — canvas replaces it entirely
   const coreEl = document.getElementById('orb-core');
   if (coreEl) coreEl.style.display = 'none';
 
@@ -127,8 +128,6 @@ export function initReactor() {
   _sizeCanvas();
   window.addEventListener('resize', _sizeCanvas, { passive: true });
 
-  _readColor();
-  Bus.on(EVENTS.THEME_CHANGED, () => requestAnimationFrame(_readColor));
   Bus.on(EVENTS.AWARENESS_CHANGED, ({ idleLevel }) => { _awIdleLevel = idleLevel; });
 
   if (_reduced) {
@@ -138,60 +137,110 @@ export function initReactor() {
   }
 }
 
+// ── Canvas sizing ─────────────────────────────────────────────
+
 function _sizeCanvas() {
   if (!_canvas || !_ctx) return;
   const p  = _canvas.parentElement;
   if (!p) return;
-  const r  = p.getBoundingClientRect();
-  const sz = Math.max(r.width, r.height, 10);
+  const rect = p.getBoundingClientRect();
+  const sz   = Math.max(rect.width, rect.height, 10);
   _canvas.width  = sz * _dpr;
   _canvas.height = sz * _dpr;
   _ctx = _canvas.getContext('2d');
   _ctx.scale(_dpr, _dpr);
 }
 
-function _readColor() {
-  _colorRgb = getComputedStyle(document.documentElement)
-    .getPropertyValue('--orb-color-rgb').trim() || '0, 212, 255';
+// ── Color helpers ─────────────────────────────────────────────
+
+function _blendVal() {
+  // 0 = electric blue, 1 = warm gold
+  return (Math.sin(_blendPhase) + 1) * 0.5;
 }
 
-function _c(a) {
-  return `rgba(${_colorRgb},${_clamp(a).toFixed(3)})`;
+function _rgb(alpha) {
+  const b = _blendVal();
+  const r = (COL_BLUE[0] + (COL_GOLD[0] - COL_BLUE[0]) * b) | 0;
+  const g = (COL_BLUE[1] + (COL_GOLD[1] - COL_BLUE[1]) * b) | 0;
+  const bv = (COL_BLUE[2] + (COL_GOLD[2] - COL_BLUE[2]) * b) | 0;
+  return `rgba(${r},${g},${bv},${_clamp(alpha).toFixed(3)})`;
 }
 
-function _hot(a) {
-  const [r, g, b] = _colorRgb.split(',').map(Number);
-  const rh = Math.round(r + (255 - r) * 0.82);
-  const gh = Math.round(g + (255 - g) * 0.80);
-  const bh = Math.round(b + (255 - b) * 0.60);
-  return `rgba(${rh},${gh},${bh},${_clamp(a).toFixed(3)})`;
+function _hot(alpha) {
+  const b  = _blendVal();
+  const r  = (COL_BLUE[0] + (COL_GOLD[0] - COL_BLUE[0]) * b) | 0;
+  const g  = (COL_BLUE[1] + (COL_GOLD[1] - COL_BLUE[1]) * b) | 0;
+  const bv = (COL_BLUE[2] + (COL_GOLD[2] - COL_BLUE[2]) * b) | 0;
+  const rh = (r  + (255 - r)  * 0.88) | 0;
+  const gh = (g  + (255 - g)  * 0.84) | 0;
+  const bh = (bv + (255 - bv) * 0.72) | 0;
+  return `rgba(${rh},${gh},${bh},${_clamp(alpha).toFixed(3)})`;
 }
 
-function _cool(a) {
-  const [r, g, b] = _colorRgb.split(',').map(Number);
-  const rc = Math.round(r * 0.86);
-  const gc = Math.round(g * 0.95);
-  const bc = Math.min(255, Math.round(b + (255 - b) * 0.14));
-  return `rgba(${rc},${gc},${bc},${_clamp(a).toFixed(3)})`;
-}
+function _clamp(a) { return a < 0 ? 0 : a > 1 ? 1 : a; }
+function _rnd(lo, hi) { return lo + Math.random() * (hi - lo); }
 
-function _clamp(a) { return Math.max(0, Math.min(1, a)); }
+// ── Surge system ──────────────────────────────────────────────
 
 function _tickSurge(state) {
   const now = Date.now();
   if (_surgePhase === 0 && now >= _surgeNext && state !== 'offline') {
-    _surgePhase = 1; _surgeType = Math.floor(Math.random() * 5); _surgeBorn = now;
+    _surgePhase = 1;
+    _surgeType  = (Math.random() * 3) | 0;
+    _surgeBorn  = now;
   }
   if (_surgePhase === 1) {
-    _surgeLevel = Math.min(1, (now - _surgeBorn) / 800);
+    _surgeLevel = Math.min(1, (now - _surgeBorn) / 1000);
     if (_surgeLevel >= 1) { _surgePhase = 2; _surgeBorn = now; }
   }
-  if (_surgePhase === 2 && (now - _surgeBorn) > 600) { _surgePhase = 3; _surgeBorn = now; }
+  if (_surgePhase === 2 && (now - _surgeBorn) > 800) {
+    _surgePhase = 3; _surgeBorn = now;
+  }
   if (_surgePhase === 3) {
-    _surgeLevel = Math.max(0, 1 - (now - _surgeBorn) / 2500);
-    if (_surgeLevel <= 0) { _surgePhase = 0; _surgeLevel = 0; _surgeNext = now + _rnd(30000, 120000); }
+    _surgeLevel = Math.max(0, 1 - (now - _surgeBorn) / 3000);
+    if (_surgeLevel <= 0) {
+      _surgePhase = 0; _surgeLevel = 0;
+      _surgeNext  = now + _rnd(50000, 120000);
+    }
   }
 }
+
+// ── Segmented ring helper ─────────────────────────────────────
+// fill: fraction of circumference covered by arcs (0–1)
+// lw:   line width in px
+
+function _drawSegRing(cx, cy, r, startAng, segs, fill, alpha, lw) {
+  if (alpha < 0.005 || r < 1) return;
+  const segSpan = (TWO_PI * fill) / segs;
+  const gapSpan = (TWO_PI * (1 - fill)) / segs;
+
+  _ctx.save();
+  _ctx.lineCap     = 'butt';
+  _ctx.lineWidth   = lw;
+  _ctx.strokeStyle = _rgb(alpha);
+
+  let ang = startAng;
+  for (let i = 0; i < segs; i++) {
+    _ctx.beginPath();
+    _ctx.arc(cx, cy, r, ang, ang + segSpan);
+    _ctx.stroke();
+
+    // Terminal dots at segment ends
+    const dotA = _clamp(alpha * 2.0);
+    _ctx.fillStyle = _rgb(dotA);
+    const ex0 = cx + Math.cos(ang) * r;
+    const ey0 = cy + Math.sin(ang) * r;
+    const ex1 = cx + Math.cos(ang + segSpan) * r;
+    const ey1 = cy + Math.sin(ang + segSpan) * r;
+    _ctx.beginPath(); _ctx.arc(ex0, ey0, lw * 0.95, 0, TWO_PI); _ctx.fill();
+    _ctx.beginPath(); _ctx.arc(ex1, ey1, lw * 0.95, 0, TWO_PI); _ctx.fill();
+
+    ang += segSpan + gapSpan;
+  }
+  _ctx.restore();
+}
+
+// ── Main animation loop ───────────────────────────────────────
 
 function _loop() {
   if (!_ctx || !_canvas) { _rafId = requestAnimationFrame(_loop); return; }
@@ -203,72 +252,66 @@ function _loop() {
   const cy = h * 0.5;
 
   const ora     = getAwareness();
-  const idleMul = _awIdleLevel === 2 ? 0.42 : _awIdleLevel === 1 ? 0.70 : 1.0;
+  const idleMul = _awIdleLevel === 2 ? 0.40 : _awIdleLevel === 1 ? 0.68 : 1.0;
   const timeMod = ora.timeModifier;
   const spd     = idleMul * timeMod;
 
   const state   = State.get('orbState') || 'idle';
-  const eTarget = Math.min(1, (STATE_ENERGY[state] ?? 0.32) + ora.energy * 0.16);
-  _energy      += (eTarget - _energy) * 0.020;
+  const eTarget = Math.min(1, (STATE_ENERGY[state] ?? 0.28) + ora.energy * 0.14);
+  _energy += (eTarget - _energy) * 0.018;
 
-  _thinkP += ((state === 'thinking' ? 1 : 0) - _thinkP) * 0.028;
+  _thinkP += ((state === 'thinking' ? 1 : 0) - _thinkP) * 0.025;
   const tp = _thinkP;
+
+  // Color blend — advances at constant rate, independent of state
+  _blendPhase += BLEND_SPEED;
 
   _tickSurge(state);
   const sl = _surgeLevel;
 
-  const tBoost = 1 + tp * 1.85;
-  _gA0      +=  0.0052  * spd * tBoost;
-  _gA1      += -0.0020  * spd * tBoost;
-  _gA2      += -0.00042 * spd;
-  _contAng  += -0.00072 * spd;
-  _innerAng +=  0.0018  * spd * tBoost;
-  _sweepAng +=  0.00055 * spd;
-  for (const f of _arcFrags) f.ang += f.vel * spd;
-  for (const p of _orbParticles) p.ph += p.vel * spd;
+  const tBoost = 1 + tp * 1.60;
 
-  const s1 = Math.sin(_t * 0.026);
-  const s2 = Math.sin(_t * 0.018 + 1.3);
-  const s3 = Math.sin(_t * 0.038 + 2.6);
-  const s5 = Math.sin(_t * 0.055 + 1.9);
+  // Advance all ring angles
+  _coreAng  +=  0.00524 * spd * tBoost;   // core ring:     ~20s / rev CW
+  _innerAng += -0.00233 * spd * tBoost;   // inner tech:    ~45s / rev CCW
+  _midAng   +=  0.00116 * spd;            // mid data:      ~90s / rev CW
+  _outerAng += -0.00070 * spd;            // outer geo:    ~150s / rev CCW
+  _contAng  +=  0.00035 * spd;            // containment:  ~300s / rev CW
+  _sweepAng +=  0.00419 * spd;            // radar:         ~25s / rev
+
+  for (const s of _SATS) s.phase += s.speed * spd;
+
+  const s1 = Math.sin(_t * 0.022);
+  const s2 = Math.sin(_t * 0.016 + 1.2);
 
   _ctx.clearRect(0, 0, w, h);
 
-  // ── LAYER 0: Polar grid ──────────────────────────────────────
+  // ── 0: Polar reference grid ──────────────────────────────────
   {
-    const a = (0.040 + _energy * 0.022) * timeMod;
-    if (a > 0.004) {
+    const ga = (0.026 + _energy * 0.016) * timeMod;
+    if (ga > 0.003) {
       _ctx.save();
-      _ctx.strokeStyle = _c(a);
 
-      // Concentric guide circles
-      _ctx.lineWidth = 0.35;
-      for (const rFr of [0.16, 0.24, 0.32, 0.41]) {
+      // 4 faint concentric guide circles
+      _ctx.lineWidth = 0.26;
+      for (const rFr of [R.INNER, R.MID, R.OUTER, R.CONTAIN]) {
+        _ctx.strokeStyle = _rgb(ga);
         _ctx.beginPath();
         _ctx.arc(cx, cy, rFr * w, 0, TWO_PI);
         _ctx.stroke();
       }
 
-      // 8 radial guide lines
-      _ctx.lineWidth = 0.30;
-      for (let i = 0; i < 8; i++) {
-        const ang = (i / 8) * TWO_PI;
+      // 16 radial lines (every 22.5°) — cardinal brighter
+      for (let i = 0; i < 16; i++) {
+        const ang     = (i / 16) * TWO_PI;
+        const isCard  = i % 4 === 0;
+        const isDiag  = i % 2 === 0 && !isCard;
+        const lineAlp = isCard ? ga * 1.20 : isDiag ? ga * 0.65 : ga * 0.38;
+        _ctx.lineWidth   = isCard ? 0.30 : 0.20;
+        _ctx.strokeStyle = _rgb(lineAlp);
         _ctx.beginPath();
-        _ctx.moveTo(cx + Math.cos(ang) * 0.09 * w, cy + Math.sin(ang) * 0.09 * w);
-        _ctx.lineTo(cx + Math.cos(ang) * 0.39 * w, cy + Math.sin(ang) * 0.39 * w);
-        _ctx.stroke();
-      }
-
-      // 4 tick marks at cardinal points on containment ring
-      _ctx.lineWidth = 0.6;
-      for (let i = 0; i < 4; i++) {
-        const ang = (i / 4) * TWO_PI;
-        const r0  = R_CONT * w - 4;
-        const r1  = R_CONT * w + 4;
-        _ctx.beginPath();
-        _ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
-        _ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
-        _ctx.strokeStyle = _c(a * 2.2);
+        _ctx.moveTo(cx + Math.cos(ang) * R.RETICLE * w, cy + Math.sin(ang) * R.RETICLE * w);
+        _ctx.lineTo(cx + Math.cos(ang) * R.CONTAIN * w, cy + Math.sin(ang) * R.CONTAIN * w);
         _ctx.stroke();
       }
 
@@ -276,63 +319,72 @@ function _loop() {
     }
   }
 
-  // ── LAYER 1: Radial spokes ───────────────────────────────────
+  // ── 1: Atmosphere boundary ────────────────────────────────────
   {
-    const count = _isMobile ? 6 : 8;
-    const rIn   = w * 0.09;
-    const rOut  = w * (R_CONT - 0.022);
-
-    _ctx.save();
-    _ctx.lineCap = 'round';
-
-    for (let i = 0; i < count; i++) {
-      const ang   = (i / count) * TWO_PI + _innerAng * 0.08 + s2 * 0.022;
-      const pulse = (Math.sin(_t * 0.030 + i * 1.05) + 1) * 0.5;
-      const a     = (0.030 + _energy * 0.052 + pulse * 0.030) * timeMod;
-
-      const x1 = cx + Math.cos(ang) * rIn;
-      const y1 = cy + Math.sin(ang) * rIn;
-      const x2 = cx + Math.cos(ang) * rOut;
-      const y2 = cy + Math.sin(ang) * rOut;
-      const g  = _ctx.createLinearGradient(x1, y1, x2, y2);
-      g.addColorStop(0,    _c(a * 2.4));
-      g.addColorStop(0.38, _c(a * 0.9));
-      g.addColorStop(0.78, _c(a * 0.28));
-      g.addColorStop(1,    _c(0));
-
+    const aa = (0.018 + _energy * 0.012) * timeMod;
+    if (aa > 0.003) {
+      _ctx.save();
       _ctx.beginPath();
-      _ctx.moveTo(x1, y1);
-      _ctx.lineTo(x2, y2);
-      _ctx.strokeStyle = g;
-      _ctx.lineWidth   = 0.50;
+      _ctx.arc(cx, cy, R.ATM * w, 0, TWO_PI);
+      _ctx.strokeStyle = _rgb(aa);
+      _ctx.lineWidth   = 0.22;
       _ctx.stroke();
+      _ctx.restore();
     }
-    _ctx.restore();
   }
 
-  // ── LAYER 1b: Radar sweep ────────────────────────────────────
+  // ── 2: Containment ring (8 segs + dense tick marks) ──────────
   {
-    const sweepSpan = Math.PI * 0.55;
-    const sweepA    = (0.022 + _energy * 0.028) * timeMod;
-    if (sweepA > 0.003) {
-      _ctx.save();
-      const sweepR = w * R_CONT * 0.98;
-      const g = _ctx.createConicalGradient
-        ? null  // not available — use manual sector
-        : null;
+    const ca = (0.40 + _energy * 0.28 + tp * 0.16) * timeMod;
+    _drawSegRing(cx, cy, w * R.CONTAIN, _contAng, 8, 0.74, ca, 0.78);
 
-      // Pie-slice fill (manual wedge)
-      const steps = 28;
-      _ctx.globalCompositeOperation = 'source-over';
+    // 72 tick marks every 5° — 3 sizes
+    const tickA = (0.16 + _energy * 0.14) * timeMod;
+    if (tickA > 0.005) {
+      _ctx.save();
+      for (let i = 0; i < 72; i++) {
+        const ang     = _contAng + (i / 72) * TWO_PI;
+        const isMain  = i % 9 === 0;  // every 45° (8 main ticks)
+        const isMed   = i % 3 === 0;  // every 15°
+        const inner   = R.CONTAIN * w - (isMain ? 6.5 : isMed ? 3.5 : 1.8);
+        const outer   = R.CONTAIN * w + (isMain ? 3.5 : 1.5);
+        _ctx.strokeStyle = _rgb(isMain ? tickA * 2.0 : isMed ? tickA * 1.2 : tickA * 0.60);
+        _ctx.lineWidth   = isMain ? 0.80 : 0.38;
+        _ctx.beginPath();
+        _ctx.moveTo(cx + Math.cos(ang) * inner, cy + Math.sin(ang) * inner);
+        _ctx.lineTo(cx + Math.cos(ang) * outer, cy + Math.sin(ang) * outer);
+        _ctx.stroke();
+      }
+      _ctx.restore();
+    }
+  }
+
+  // ── 3: Outer geo ring (3 long segments, slow) ─────────────────
+  {
+    const oa = (0.15 + _energy * 0.18 + tp * 0.10) * timeMod;
+    _drawSegRing(cx, cy, w * R.OUTER, _outerAng, 3, 0.80, oa, 0.62);
+  }
+
+  // ── 4: Radar sweep ────────────────────────────────────────────
+  {
+    const sweepA = (0.016 + _energy * 0.024) * timeMod;
+    if (sweepA > 0.003) {
+      const sweepR   = R.CONTAIN * w * 0.97;
+      const sweepSpan = Math.PI * 0.50;
+      const steps    = 24;
+
+      _ctx.save();
+
+      // Fading sector fill
       for (let i = 0; i < steps; i++) {
-        const t0 = _sweepAng + (i / steps) * sweepSpan;
-        const t1 = _sweepAng + ((i + 1) / steps) * sweepSpan;
+        const t0   = _sweepAng + (i / steps) * sweepSpan;
+        const t1   = _sweepAng + ((i + 1) / steps) * sweepSpan;
         const fade = 1 - i / steps;
         _ctx.beginPath();
         _ctx.moveTo(cx, cy);
         _ctx.arc(cx, cy, sweepR, t0, t1);
         _ctx.closePath();
-        _ctx.fillStyle = _c(sweepA * fade * fade);
+        _ctx.fillStyle = _rgb(sweepA * fade * fade * 1.8);
         _ctx.fill();
       }
 
@@ -343,299 +395,224 @@ function _loop() {
         cx + Math.cos(_sweepAng) * sweepR,
         cy + Math.sin(_sweepAng) * sweepR
       );
-      _ctx.strokeStyle = _c(sweepA * 3.2);
-      _ctx.lineWidth   = 0.7;
+      _ctx.strokeStyle = _rgb(_clamp(sweepA * 5.0));
+      _ctx.lineWidth   = 0.65;
       _ctx.lineCap     = 'round';
       _ctx.stroke();
+
+      // Tip dot
+      _ctx.beginPath();
+      _ctx.arc(
+        cx + Math.cos(_sweepAng) * sweepR,
+        cy + Math.sin(_sweepAng) * sweepR,
+        1.4, 0, TWO_PI
+      );
+      _ctx.fillStyle = _hot(_clamp(sweepA * 8));
+      _ctx.fill();
+
       _ctx.restore();
     }
   }
 
-  // ── LAYER 2: Inner geo ring ──────────────────────────────────
+  // ── 5: Mid data ring (4 segs + 16 cardinal/sub ticks) ─────────
   {
-    const a = (_GEO[0].base + _energy * 0.22) * timeMod;
-    _drawGeoRing(cx, cy, w, _GEO[0], _geoGaps[0], _innerAng, a);
-  }
+    const ma = (0.28 + _energy * 0.24 + tp * 0.12) * timeMod;
+    _drawSegRing(cx, cy, w * R.MID, _midAng, 4, 0.72, ma, 0.70);
 
-  // ── LAYER 3: Mid geo ring ────────────────────────────────────
-  {
-    const a = (_GEO[1].base + _energy * 0.16) * timeMod;
-    _drawGeoRing(cx, cy, w, _GEO[1], _geoGaps[1], _gA1, a);
-  }
-
-  // ── LAYER 4: Containment ring ────────────────────────────────
-  {
-    const surgeBoost = _surgeType === 3 ? sl * 0.28 : 0;
-    const contR = w * R_CONT * (_surgeType === 3 ? (1 - sl * 0.08) : 1);
-    const contA = (0.48 + _energy * 0.30 + tp * 0.14 + surgeBoost) * timeMod;
-
-    const passes = _isMobile ? 1 : 2;
-    for (let p = passes - 1; p >= 0; p--) {
-      _drawContRing(cx, cy, contR, contA * (0.22 + p * 0.38), 0.9 + p * 2.2);
+    const tickA = (0.20 + _energy * 0.16) * timeMod;
+    if (tickA > 0.005) {
+      _ctx.save();
+      for (let i = 0; i < 16; i++) {
+        const ang   = _midAng + (i / 16) * TWO_PI;
+        const isCard = i % 4 === 0;
+        const tLen  = isCard ? 5.5 : 2.2;
+        _ctx.beginPath();
+        _ctx.moveTo(cx + Math.cos(ang) * (R.MID * w - tLen), cy + Math.sin(ang) * (R.MID * w - tLen));
+        _ctx.lineTo(cx + Math.cos(ang) * (R.MID * w + 1.5),  cy + Math.sin(ang) * (R.MID * w + 1.5));
+        _ctx.strokeStyle = _rgb(isCard ? tickA * 1.8 : tickA * 0.65);
+        _ctx.lineWidth   = isCard ? 0.72 : 0.32;
+        _ctx.stroke();
+      }
+      _ctx.restore();
     }
-    _drawContRing(cx, cy, contR, contA, 0.9);
   }
 
-  // ── LAYER 4b: Orbital particles ─────────────────────────────
+  // ── 6: Inner tech ring (6 segs, faster CCW) ───────────────────
+  {
+    const ia = (0.36 + _energy * 0.28 + tp * 0.14) * timeMod;
+    _drawSegRing(cx, cy, w * R.INNER, _innerAng, 6, 0.80, ia, 0.55);
+  }
+
+  // ── 7: Orbital satellites ─────────────────────────────────────
   {
     _ctx.save();
     _ctx.globalCompositeOperation = 'lighter';
-    for (const p of _orbParticles) {
-      const pr = p.rFr * w;
-      const px = cx + Math.cos(p.ph) * pr;
-      const py = cy + Math.sin(p.ph) * pr;
-      const pa = (0.55 + _energy * 0.45) * timeMod;
+    for (const sat of _SATS) {
+      const px = cx + Math.cos(sat.phase) * sat.rFr * w;
+      const py = cy + Math.sin(sat.phase) * sat.rFr * w;
+      const sa = (0.52 + _energy * 0.48) * timeMod;
 
       // Glow halo
-      const halo = _ctx.createRadialGradient(px, py, 0, px, py, 4.5);
-      halo.addColorStop(0,   _hot(pa * 0.80));
-      halo.addColorStop(0.4, _c(pa * 0.28));
-      halo.addColorStop(1,   _c(0));
+      const hr  = sat.size * 2.8;
+      const halo = _ctx.createRadialGradient(px, py, 0, px, py, hr);
+      halo.addColorStop(0,    _hot(sa * 0.82));
+      halo.addColorStop(0.40, _rgb(sa * 0.28));
+      halo.addColorStop(1,    _rgb(0));
       _ctx.fillStyle = halo;
-      _ctx.beginPath();
-      _ctx.arc(px, py, 4.5, 0, TWO_PI);
-      _ctx.fill();
+      _ctx.beginPath(); _ctx.arc(px, py, hr, 0, TWO_PI); _ctx.fill();
 
       // Hard dot
-      _ctx.beginPath();
-      _ctx.arc(px, py, 1.4, 0, TWO_PI);
-      _ctx.fillStyle = _hot(Math.min(1, pa * 1.4));
+      _ctx.beginPath(); _ctx.arc(px, py, sat.size * 0.82, 0, TWO_PI);
+      _ctx.fillStyle = _hot(_clamp(sa * 1.35));
       _ctx.fill();
     }
     _ctx.restore();
   }
 
-  // ── LAYER 5: Outer geo ring ──────────────────────────────────
+  // ── 8: Core ring (4 segs, fast CW) ───────────────────────────
   {
-    const a = (_GEO[2].base + _energy * 0.10) * timeMod;
-    _drawGeoRing(cx, cy, w, _GEO[2], _geoGaps[2], _gA2, a);
+    const cra = (0.48 + _energy * 0.30 + tp * 0.22) * timeMod;
+    _drawSegRing(cx, cy, w * R.CORE, _coreAng, 4, 0.68, cra, 0.42);
   }
 
-  // ── LAYER 6: Arc fragments ───────────────────────────────────
-  {
-    _ctx.save();
-    _ctx.lineCap = 'round';
-    for (const f of _arcFrags) {
-      const breathe = Math.sin(_t * 0.019 + f.ph) * 0.16 + 0.84;
-      const a = f.base * (0.80 + _energy * 2.2) * breathe * timeMod;
-      if (a < 0.004) continue;
-      _ctx.beginPath();
-      _ctx.arc(cx, cy, f.r * w, f.ang, f.ang + f.span);
-      _ctx.strokeStyle = _c(a);
-      _ctx.lineWidth = 0.50;
-      _ctx.stroke();
-    }
-    _ctx.restore();
-  }
-
-  // ── LAYER 7: Chamber glow ────────────────────────────────────
+  // ── 9: Inner glow — compact, NOT a sphere ─────────────────────
   {
     _ctx.save();
     _ctx.globalCompositeOperation = 'lighter';
-    const offX  = cx + (s1 * 0.015 + s3 * 0.008 + _curNX * 0.050) * w;
-    const offY  = cy + (s2 * 0.012 + _curNY * 0.050) * w;
-    const chamR = w * (0.168 + tp * 0.055 + (_surgeType === 0 ? sl * 0.058 : 0));
-    const chamA = (0.042 + _energy * 0.052 + tp * 0.058) * timeMod
-      + (_surgeType === 0 ? sl * 0.09 : 0);
-
-    const g = _ctx.createRadialGradient(offX, offY, 0, offX, offY, chamR);
-    g.addColorStop(0,    _c(chamA * 1.4));
-    g.addColorStop(0.40, _c(chamA * 0.65));
-    g.addColorStop(1,    _c(0));
-    _ctx.fillStyle = g;
-    _ctx.beginPath();
-    _ctx.arc(offX, offY, chamR, 0, TWO_PI);
-    _ctx.fill();
-    _ctx.restore();
-  }
-
-  // ── LAYER 8: Inner glow ──────────────────────────────────────
-  {
-    _ctx.save();
-    _ctx.globalCompositeOperation = 'lighter';
-    const nucScale = 1 - tp * 0.25;
-    const surgeNuc = (_surgeType === 0) ? sl : 0;
-    const igR = w * R_NUC_IG * nucScale * (1 + s1 * 0.07);
-    const igA = (0.24 + _energy * 0.16 + surgeNuc * 0.14) * timeMod;
+    const igR = w * 0.058 * (1 + Math.sin(_t * 0.028) * 0.08 + tp * 0.18);
+    const igA = (0.10 + _energy * 0.09 + tp * 0.08 + sl * 0.06) * timeMod;
 
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, igR);
-    g.addColorStop(0,    _hot(igA * 0.45));
-    g.addColorStop(0.22, _hot(igA));
-    g.addColorStop(0.55, _c(igA * 0.55));
-    g.addColorStop(0.88, _c(igA * 0.12));
-    g.addColorStop(1,    _c(0));
+    g.addColorStop(0,    _hot(igA * 0.90));
+    g.addColorStop(0.35, _rgb(igA * 0.45));
+    g.addColorStop(0.75, _rgb(igA * 0.10));
+    g.addColorStop(1,    _rgb(0));
     _ctx.fillStyle = g;
-    _ctx.beginPath();
-    _ctx.arc(cx, cy, igR, 0, TWO_PI);
-    _ctx.fill();
+    _ctx.beginPath(); _ctx.arc(cx, cy, igR, 0, TWO_PI); _ctx.fill();
     _ctx.restore();
   }
 
-  // ── LAYER 9: Nucleus ─────────────────────────────────────────
+  // ── 10: Reticle (crosshair ring + 4 arm ticks) ────────────────
+  {
+    const ra = (0.42 + _energy * 0.22) * timeMod;
+    if (ra > 0.006) {
+      _ctx.save();
+      // Segmented reticle ring (counter-rotates slowly)
+      _drawSegRing(cx, cy, w * R.RETICLE, -_coreAng * 0.35, 4, 0.55, ra * 0.68, 0.42);
+
+      // 4 short arm ticks at cardinal angles (pointing outward from reticle)
+      _ctx.strokeStyle = _rgb(ra * 0.75);
+      _ctx.lineWidth   = 0.55;
+      _ctx.lineCap     = 'butt';
+      for (let i = 0; i < 4; i++) {
+        const ang = (i / 4) * TWO_PI;
+        const r0  = R.RETICLE * w + 2.0;
+        const r1  = R.RETICLE * w + 7.5;
+        _ctx.beginPath();
+        _ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+        _ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+        _ctx.stroke();
+      }
+      _ctx.restore();
+    }
+  }
+
+  // ── 11: Nucleus — compact star point ──────────────────────────
   {
     _ctx.save();
     _ctx.globalCompositeOperation = 'lighter';
-    const nucScale = 1 - tp * 0.22;
-    const surgeNuc = (_surgeType === 0) ? sl * 0.9 : 0;
-    const pulse    = s5 * 0.5 + 0.5;
+    const pulse = (Math.sin(_t * 0.048) + 1) * 0.5;
+    const nucR  = w * R.NUCLEUS * (1 + pulse * 0.14 + tp * 0.22 + sl * 0.32);
+    const nucA  = (0.96 + sl * 0.04) * timeMod;
 
-    const ringR = w * R_NUC_PT * nucScale * (1.8 + pulse * 0.22);
-    const ringA = (0.92 + _energy * 0.22 + surgeNuc * 0.18) * timeMod;
-    {
-      const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR);
-      g.addColorStop(0,    _hot(ringA));
-      g.addColorStop(0.42, _c(ringA * 0.50));
-      g.addColorStop(1,    _c(0));
-      _ctx.fillStyle = g;
-      _ctx.beginPath();
-      _ctx.arc(cx, cy, ringR, 0, TWO_PI);
-      _ctx.fill();
-    }
+    // Tight outer glow — stops well short of "sphere" size
+    const ng = _ctx.createRadialGradient(cx, cy, 0, cx, cy, nucR * 2.8);
+    ng.addColorStop(0,    _hot(nucA));
+    ng.addColorStop(0.28, _rgb(nucA * 0.52));
+    ng.addColorStop(0.60, _rgb(nucA * 0.16));
+    ng.addColorStop(1,    _rgb(0));
+    _ctx.fillStyle = ng;
+    _ctx.beginPath(); _ctx.arc(cx, cy, nucR * 2.8, 0, TWO_PI); _ctx.fill();
 
-    const ptR = w * R_NUC_PT * nucScale * (0.65 + pulse * 0.10);
-    _ctx.beginPath();
-    _ctx.arc(cx, cy, ptR, 0, TWO_PI);
-    _ctx.fillStyle = _hot(_clamp(0.97 + surgeNuc * 0.03));
+    // Hard point
+    _ctx.beginPath(); _ctx.arc(cx, cy, nucR, 0, TWO_PI);
+    _ctx.fillStyle = _hot(1.0);
     _ctx.fill();
 
-    const coreR = w * R_NUC_PT * nucScale * 0.42;
-    _ctx.beginPath();
-    _ctx.arc(cx, cy, coreR, 0, TWO_PI);
-    _ctx.fillStyle = `rgba(255,255,255,${_clamp(0.96 + surgeNuc * 0.04).toFixed(3)})`;
+    // White-hot center
+    _ctx.beginPath(); _ctx.arc(cx, cy, nucR * 0.40, 0, TWO_PI);
+    _ctx.fillStyle = 'rgba(255,255,255,0.97)';
     _ctx.fill();
+
     _ctx.restore();
   }
 
-  // ── LAYER 10: Surge overlay ──────────────────────────────────
+  // ── 12: Cursor shimmer (subtle offset) ────────────────────────
+  const cursorMag = _curNX * _curNX + _curNY * _curNY;
+  if (cursorMag > 0.001) {
+    _ctx.save();
+    _ctx.globalCompositeOperation = 'lighter';
+    const offX = cx + _curNX * w * 0.030;
+    const offY = cy + _curNY * w * 0.030;
+    const shR  = w * 0.070;
+    const shA  = 0.030 * _energy * timeMod;
+    const g    = _ctx.createRadialGradient(offX, offY, 0, offX, offY, shR);
+    g.addColorStop(0, _rgb(shA));
+    g.addColorStop(1, _rgb(0));
+    _ctx.fillStyle = g;
+    _ctx.beginPath(); _ctx.arc(offX, offY, shR, 0, TWO_PI); _ctx.fill();
+    _ctx.restore();
+  }
+
+  // ── 13: Surge overlay ─────────────────────────────────────────
   if (sl > 0.02) _drawSurge(cx, cy, w, sl);
 
   _rafId = requestAnimationFrame(_loop);
 }
 
-// ── Draw helpers ──────────────────────────────────────────────
-
-function _drawGeoRing(cx, cy, w, cfg, gaps, angle, alpha) {
-  if (alpha < 0.006) return;
-  const r        = cfg.rFr * w;
-  const totalGap = gaps.reduce((s, g) => s + g, 0);
-  const arcAvail = 1 - totalGap;
-  const segFrac  = arcAvail / cfg.segs;
-
-  _ctx.save();
-  _ctx.lineCap     = 'butt';
-  _ctx.strokeStyle = _c(alpha);
-  _ctx.lineWidth   = cfg.lw;
-
-  let cursor = angle;
-  for (let i = 0; i < cfg.segs; i++) {
-    const segSpan = segFrac * TWO_PI;
-    const gapSpan = gaps[i] * TWO_PI;
-    _ctx.beginPath();
-    _ctx.arc(cx, cy, r, cursor, cursor + segSpan);
-    _ctx.stroke();
-    const ex = cx + Math.cos(cursor + segSpan) * r;
-    const ey = cy + Math.sin(cursor + segSpan) * r;
-    _ctx.beginPath();
-    _ctx.arc(ex, ey, cfg.lw * 1.3, 0, TWO_PI);
-    _ctx.fillStyle = _c(_clamp(alpha * 2.4));
-    _ctx.fill();
-    cursor += segSpan + gapSpan;
-  }
-  _ctx.restore();
-}
-
-function _drawContRing(cx, cy, r, alpha, lw) {
-  if (alpha < 0.006) return;
-  const totalGap = _contGaps.reduce((s, g) => s + g, 0);
-  const arcAvail  = 1 - totalGap;
-  const segFrac   = arcAvail / CONT_SEGS;
-
-  _ctx.save();
-  _ctx.lineCap     = 'round';
-  _ctx.lineWidth   = lw;
-  _ctx.strokeStyle = _c(alpha);
-
-  let cursor = _contAng;
-  for (let i = 0; i < CONT_SEGS; i++) {
-    const segSpan = segFrac * TWO_PI;
-    const gapSpan = _contGaps[i] * TWO_PI;
-    _ctx.beginPath();
-    _ctx.arc(cx, cy, r, cursor, cursor + segSpan);
-    _ctx.stroke();
-    const ex = cx + Math.cos(cursor + segSpan) * r;
-    const ey = cy + Math.sin(cursor + segSpan) * r;
-    _ctx.beginPath();
-    _ctx.arc(ex, ey, lw * 0.85, 0, TWO_PI);
-    _ctx.fillStyle = _c(_clamp(alpha * 2.6));
-    _ctx.fill();
-    cursor += segSpan + gapSpan;
-  }
-  _ctx.restore();
-}
+// ── Surge events ──────────────────────────────────────────────
 
 function _drawSurge(cx, cy, w, sl) {
   _ctx.save();
-
   switch (_surgeType) {
     case 0: {
-      _ctx.globalCompositeOperation = 'lighter';
-      const fr = w * 0.20 * sl;
-      const g  = _ctx.createRadialGradient(cx, cy, 0, cx, cy, fr);
-      g.addColorStop(0,    _hot(0.55 * sl));
-      g.addColorStop(0.30, _c(0.22 * sl));
-      g.addColorStop(1,    _c(0));
-      _ctx.fillStyle = g;
-      _ctx.beginPath(); _ctx.arc(cx, cy, fr, 0, TWO_PI); _ctx.fill();
-      break;
-    }
-    case 1: {
-      const baseR = w * R_CONT;
+      // Expanding ripple rings outward from containment
       for (let k = 0; k < 3; k++) {
-        const rip = sl - k * 0.30;
+        const rip = sl - k * 0.28;
         if (rip <= 0) continue;
         _ctx.beginPath();
-        _ctx.arc(cx, cy, baseR + w * 0.14 * (1 - rip), 0, TWO_PI);
-        _ctx.strokeStyle = _c(rip * 0.45);
-        _ctx.lineWidth   = 1.0 * rip;
+        _ctx.arc(cx, cy, R.CONTAIN * w + w * 0.10 * (1 - rip), 0, TWO_PI);
+        _ctx.strokeStyle = _rgb(rip * 0.38);
+        _ctx.lineWidth   = 1.2 * rip;
         _ctx.stroke();
       }
       break;
     }
+    case 1: {
+      // Inner chamber brightens — additive radial
+      _ctx.globalCompositeOperation = 'lighter';
+      const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * R.INNER);
+      g.addColorStop(0,    _hot(sl * 0.18));
+      g.addColorStop(0.55, _rgb(sl * 0.07));
+      g.addColorStop(1,    _rgb(0));
+      _ctx.fillStyle = g;
+      _ctx.beginPath(); _ctx.arc(cx, cy, w * R.INNER, 0, TWO_PI); _ctx.fill();
+      break;
+    }
     case 2: {
-      _ctx.globalCompositeOperation = 'lighter';
-      const ir = w * 0.26 * sl;
-      const g  = _ctx.createRadialGradient(cx, cy, 0, cx, cy, ir);
-      g.addColorStop(0, _c(0.22 * sl)); g.addColorStop(0.55, _c(0.08 * sl)); g.addColorStop(1, _c(0));
-      _ctx.fillStyle = g;
-      _ctx.beginPath(); _ctx.arc(cx, cy, w * 0.48, 0, TWO_PI); _ctx.fill();
-      break;
-    }
-    case 3: {
-      const cr = w * R_CONT;
-      _ctx.beginPath(); _ctx.arc(cx, cy, cr, 0, TWO_PI);
-      _ctx.strokeStyle = _c(sl * 0.65); _ctx.lineWidth = 2.8 * sl; _ctx.stroke();
-      _ctx.globalCompositeOperation = 'lighter';
-      const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, cr * 0.80);
-      g.addColorStop(0, _c(sl * 0.12)); g.addColorStop(0.7, _c(sl * 0.04)); g.addColorStop(1, _c(0));
-      _ctx.fillStyle = g;
-      _ctx.beginPath(); _ctx.arc(cx, cy, cr * 0.80, 0, TWO_PI); _ctx.fill();
-      break;
-    }
-    case 4: {
-      const t = 1 - sl;
-      const wR = w * 0.42 * t;
-      _ctx.beginPath(); _ctx.arc(cx, cy, wR, 0, TWO_PI);
-      _ctx.strokeStyle = _c(sl * 0.38); _ctx.lineWidth = 2.0 * sl; _ctx.stroke();
-      if (t > 0.20) {
-        _ctx.beginPath(); _ctx.arc(cx, cy, wR * 0.60, 0, TWO_PI);
-        _ctx.strokeStyle = _c(sl * 0.16); _ctx.lineWidth = 0.9; _ctx.stroke();
-      }
+      // Containment ring flares
+      _ctx.beginPath();
+      _ctx.arc(cx, cy, R.CONTAIN * w, 0, TWO_PI);
+      _ctx.strokeStyle = _rgb(sl * 0.52);
+      _ctx.lineWidth   = 2.4 * sl;
+      _ctx.stroke();
       break;
     }
   }
-
   _ctx.restore();
 }
+
+// ── Static fallback (reduced motion) ─────────────────────────
 
 function _drawStatic() {
   if (!_ctx || !_canvas) return;
@@ -643,21 +620,20 @@ function _drawStatic() {
   const cx = w * 0.5;
   const cy = w * 0.5;
 
-  const g1 = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.22);
-  g1.addColorStop(0, _c(0.28)); g1.addColorStop(0.5, _c(0.10)); g1.addColorStop(1, _c(0));
-  _ctx.fillStyle = g1;
-  _ctx.beginPath(); _ctx.arc(cx, cy, w * 0.22, 0, TWO_PI); _ctx.fill();
+  _drawSegRing(cx, cy, w * R.CONTAIN, 0,    8, 0.74, 0.38, 0.75);
+  _drawSegRing(cx, cy, w * R.OUTER,   0,    3, 0.80, 0.18, 0.62);
+  _drawSegRing(cx, cy, w * R.MID,     0,    4, 0.72, 0.26, 0.68);
+  _drawSegRing(cx, cy, w * R.INNER,   0,    6, 0.80, 0.22, 0.52);
+  _drawSegRing(cx, cy, w * R.CORE,    0.78, 4, 0.68, 0.42, 0.40);
 
-  const g2 = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * R_NUC_IG);
-  g2.addColorStop(0, _hot(0.65)); g2.addColorStop(0.5, _c(0.28)); g2.addColorStop(1, _c(0));
-  _ctx.fillStyle = g2;
-  _ctx.beginPath(); _ctx.arc(cx, cy, w * R_NUC_IG, 0, TWO_PI); _ctx.fill();
+  // Nucleus glow
+  const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 0.08);
+  g.addColorStop(0,    _hot(0.80));
+  g.addColorStop(0.45, _rgb(0.30));
+  g.addColorStop(1,    _rgb(0));
+  _ctx.fillStyle = g;
+  _ctx.beginPath(); _ctx.arc(cx, cy, w * 0.08, 0, TWO_PI); _ctx.fill();
 
-  _ctx.beginPath(); _ctx.arc(cx, cy, w * R_NUC_PT, 0, TWO_PI);
-  _ctx.fillStyle = _hot(0.88); _ctx.fill();
-
-  _ctx.beginPath(); _ctx.arc(cx, cy, w * R_CONT, 0.5, 0.5 + TWO_PI * 0.80);
-  _ctx.strokeStyle = _c(0.50); _ctx.lineWidth = 1.0; _ctx.stroke();
+  _ctx.beginPath(); _ctx.arc(cx, cy, w * R.NUCLEUS, 0, TWO_PI);
+  _ctx.fillStyle = _hot(0.92); _ctx.fill();
 }
-
-function _rnd(min, max) { return min + Math.random() * (max - min); }

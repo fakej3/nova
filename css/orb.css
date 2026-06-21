@@ -19,13 +19,13 @@
 
 #orb-field {
   position: absolute;
-  inset: -80px;
+  inset: -60px;
   border-radius: 50%;
   background: radial-gradient(
     circle at center,
-    rgba(var(--orb-color-rgb), 0.07) 0%,
-    rgba(var(--orb-color-rgb), 0.025) 40%,
-    transparent 70%
+    rgba(var(--orb-color-rgb), 0.030) 0%,
+    rgba(var(--orb-color-rgb), 0.008) 50%,
+    transparent 72%
   );
   pointer-events: none;
   will-change: transform, opacity;
@@ -42,17 +42,17 @@
   will-change: transform, opacity;
 }
 
-/* ── Outer glow halo ────────────────────────────────────────── */
+/* ── Outer glow halo — very subtle, no sphere bloom ─────────── */
 
 #orb-glow-outer {
   position: absolute;
-  inset: -36px;
+  inset: -24px;
   border-radius: 50%;
   background: radial-gradient(
     circle at center,
-    var(--orb-glow) 0%,
-    rgba(var(--orb-color-rgb), 0.1) 45%,
-    transparent 70%
+    rgba(var(--orb-color-rgb), 0.06) 0%,
+    rgba(var(--orb-color-rgb), 0.02) 55%,
+    transparent 75%
   );
   pointer-events: none;
   will-change: transform, opacity;
@@ -90,51 +90,19 @@
   width: clamp(155px, 17vw, 220px);
   height: clamp(155px, 17vw, 220px);
   border-radius: 50%;
-  background:
-    radial-gradient(
-      ellipse at 30% 25%,
-      rgba(var(--orb-color-rgb), 0.22) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse at 70% 75%,
-      rgba(var(--orb-color-rgb), 0.06) 0%,
-      transparent 50%
-    ),
-    radial-gradient(
-      ellipse at center,
-      var(--bg-elevated) 20%,
-      var(--bg-surface) 55%,
-      var(--bg-secondary) 100%
-    );
-  border: 1px solid rgba(var(--orb-color-rgb), 0.5);
+  background: var(--bg-primary);
+  border: 1px solid rgba(var(--orb-color-rgb), 0.14);
   box-shadow:
-    0 0 30px var(--orb-glow),
-    0 0 60px rgba(var(--orb-color-rgb), 0.12),
-    0 0 100px rgba(var(--orb-color-rgb), 0.05),
-    inset 0 1px 0 rgba(var(--orb-color-rgb), 0.35),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.6),
-    inset 0 0 40px rgba(0, 0, 0, 0.3);
+    0 0 18px rgba(var(--orb-color-rgb), 0.08),
+    inset 0 0 24px rgba(0, 0, 0, 0.55);
   overflow: hidden;
   will-change: transform, opacity;
 }
 
-/* ── Sphere highlight (3D convex illusion) ──────────────────── */
+/* ── Sphere highlight — hidden; canvas replaces sphere look ──── */
 
 #orb-sphere-highlight {
-  position: absolute;
-  top: 8%;
-  left: 15%;
-  width: 38%;
-  height: 38%;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse at 40% 40%,
-    rgba(var(--orb-color-rgb), 0.28) 0%,
-    rgba(var(--orb-color-rgb), 0.08) 50%,
-    transparent 100%
-  );
-  pointer-events: none;
+  display: none;
 }
 
 /* ── Inner holographic reactor ring ─────────────────────────── */

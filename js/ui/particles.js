@@ -15,7 +15,7 @@
 import { Bus, EVENTS } from '../core/bus.js';
 
 const _isMobile       = window.innerWidth <= 640;
-const PARTICLE_COUNT  = _isMobile ? 35 : 70;
+const PARTICLE_COUNT  = _isMobile ? 10 : 22;
 const SHOOTING_CHANCE = 0.0008;
 const MAX_SPEED       = 0.65;  // px/frame, prevents state forces from runaway
 

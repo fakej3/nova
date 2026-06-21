@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-v13';
+const CACHE_NAME = 'nova-v14';
 
 const ASSETS = [
   './index.html',

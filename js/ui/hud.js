@@ -1,23 +1,20 @@
 /**
- * NOVA HUD System
- * Canvas-drawn orbital HUD around the orb + screen-level ambient elements.
+ * NOVA HUD System — Phase K: AI Core Restore
  *
- * Phase 2.7: state-aware params, energy arcs, micro-events, mouse glow
- * Phase 3.0 additions:
- *   - Memory constellation (Phase C): real memory count → node ring
- *   - Orbital satellites (Phase F): 4 tiny satellites with trails
- *   - Awareness integration (Phase A/D): idle/time modifiers on all animation
- *   - Enhanced micro-events (Phase E): 6 event types, 20–90s range
+ * Phase K removes the "solar system" feel and restores intelligence:
+ *   - Satellites REMOVED (they felt like orbiting planets)
+ *   - Neural network: 5 nodes, visible connection lines, deliberate topology
+ *   - Signal propagation: tiny pulses travel node→node along routes
+ *   - Network reconfiguration: smooth fade-rebuild every 15–30s
+ *   - Outer ring formations: coordinated ring events every 20–60s
+ *   - Intelligence states: idle/listening/thinking/responding/success/error
+ *     each affect signal rate, network density, ring activity
  *
- * Phase J — NOVA Living Orb Evolution:
- *   Phase 1 — Dynamic outer ring system   (5 rings R=177–238, smooth recal)
- *   Phase 2 — Internal data network       (8 nodes R=50–95, topology rebuild)
- *   Phase 3 — Enhanced satellites         (burst speed, trails, glow, radius)
- *   Phase 4 — Reactive energy waves       (_triggerEnergyWave cascade)
- *   Phase 5 — Focus mode                  (mouse proximity → activity boost)
- *   Phase 6 — New micro-event types       (3 additional ambient events)
- *   Phase 7 — Depth enhancement           (bg ticks R=128, outer ambient halo)
- *   Phase 8 — Deeper awareness integration (focus×awareness throughout)
+ * Preserved from prior phases (untouched):
+ *   Scanner beam, tick marks, rotating arcs, energy arc system,
+ *   6+3 micro-event types, memory constellation, awareness integration,
+ *   mouse glow, cardinal labels, pulse rings, data fragments,
+ *   focus mode, depth halo, background ticks.
  */
 
 import { DB }              from '../core/db.js';
@@ -28,8 +25,8 @@ import { getAwareness }    from './awareness.js';
 
 // ── Constants ─────────────────────────────────────────────────
 
-const TWO_PI   = Math.PI * 2;
-const HALF_PI  = Math.PI / 2;
+const TWO_PI  = Math.PI * 2;
+const HALF_PI = Math.PI / 2;
 
 const CANVAS_SIZE   = 520;
 const CX            = 260;
@@ -90,19 +87,15 @@ let _taskPending  = 0;
 let _memoryCount  = 0;
 let _sessionStart = Date.now();
 
-// Live interpolated state params
 let _live = { ...STATE_TARGETS.idle };
 
-// Awareness modifiers (updated each frame from getAwareness())
 let _awIdleMul = 1.0;
 let _awTimeMod = 1.0;
 let _awEnergy  = 1.0;
 
-// Pulse rings
 const _pulses = [];
 let _nextIdlePulse = Date.now() + _randMs(18000, 35000);
 
-// Data fragment flashes
 const _fragments = [];
 let _nextFragment = Date.now() + _randMs(12000, 25000);
 
@@ -111,36 +104,44 @@ const FRAGMENT_POOL = [
   '0x00FF','INT:0','PROC:—','NET:OK','BUF:CLR',
 ];
 
-// Energy arcs
 const _energyArcs = [];
 
-// Micro-events
 let _microScanBoost = null;
 let _nextMicroEvent = Date.now() + _randMs(15000, 45000);
 
-// Mouse influence
 let _mouseNX = 0;
 let _mouseNY = 0;
 
-// ── Memory constellation (Phase C) ───────────────────────────
+// ── Memory constellation ──────────────────────────────────────
 
 const MAX_CON_NODES = 16;
 const _conNodes     = [];
 let   _conBuilt     = false;
 
-// ── Orbital satellites (Phase F / Phase J-3) ─────────────────
-// Phase J-3: added targetR, burstMul, burstEnd, glowLevel, trail
+// ── Focus mode ────────────────────────────────────────────────
 
-const _satellites = [
-  { angle: 0,              r: 192, speed:  0.00028, size: 2.0, alpha: 0.42, targetR: 192, burstMul: 1.0, burstEnd: 0, glowLevel: 0, trail: [] },
-  { angle: Math.PI * 0.5,  r: 201, speed: -0.00019, size: 1.7, alpha: 0.36, targetR: 201, burstMul: 1.0, burstEnd: 0, glowLevel: 0, trail: [] },
-  { angle: Math.PI,        r: 186, speed:  0.00035, size: 1.5, alpha: 0.33, targetR: 186, burstMul: 1.0, burstEnd: 0, glowLevel: 0, trail: [] },
-  { angle: Math.PI * 1.5,  r: 209, speed:  0.00015, size: 1.4, alpha: 0.28, targetR: 209, burstMul: 1.0, burstEnd: 0, glowLevel: 0, trail: [] },
-];
+let _focusLevel = 0;
 
-// ── Phase J-1: Dynamic outer ring system ─────────────────────
-// 5 rings beyond existing arcs (R_ARC_OUTER=172), independently animated.
-// Each ring has segmented arcs with smooth gap recalibration every 20–40s.
+// ── Neural network (Phase K) ──────────────────────────────────
+// 5 nodes on desktop, 4 on mobile. Visible connection lines.
+// Signals travel along edges as the primary internal motion.
+
+const _netNodes   = [];
+let   _netAlpha   = 0.0;   // current rendered opacity (lerps to _netTarget)
+let   _netTarget  = 0.70;
+let   _netFading  = false;  // true during smooth reconfiguration fade-down
+let   _nextNetEvt = Date.now() + _randMs(5000, 12000);  // first build
+
+// ── Signal propagation (Phase K) ─────────────────────────────
+// Tiny pulses travel node→node along network routes.
+// Max 4 active simultaneously. Signals accelerate slightly and
+// leave a gradient trail that illuminates the route briefly.
+
+const _signals    = [];
+const MAX_SIGNALS = 4;
+let   _sigBoost   = 0;  // 0–1 temporary spawn-rate boost from events, decays
+
+// ── Outer ring system ─────────────────────────────────────────
 
 const _outerRings = [
   { r: 177, segs: 8, speed:  0.00062, baseLw: 0.6, baseAlpha: 0.20 },
@@ -158,19 +159,11 @@ const _outerRings = [
   nextRecal:  Date.now() + _randMs(20000, 40000),
 }));
 
-// ── Phase J-2: Internal data network ─────────────────────────
-// Moving nodes at R=50–95 on the HUD canvas (inside the orb area).
-// Rebuilds topology every 25–55s.
-
-const _netNodes    = [];
-let   _netAlpha    = 0.0;
-let   _netTarget   = 0.50;
-let   _nextNetEvt  = Date.now() + _randMs(5000, 12000);  // first build delay
-
-// ── Phase J-5: Focus mode ────────────────────────────────────
-// _focusLevel 0–1 driven by mouse proximity to orb center.
-
-let _focusLevel = 0;
+// Formation events — coordinated ring activity every 20–60s
+let _nextFormation     = Date.now() + _randMs(20000, 60000);
+let _formationActive   = false;
+let _formationBorn     = 0;
+let _formationDuration = 4000;
 
 // ── Public API ─────────────────────────────────────────────────
 
@@ -199,49 +192,48 @@ export async function initHud() {
 
   await _refreshCounts();
 
-  // Count maintenance
   Bus.on(EVENTS.NOTE_CREATED,   () => { _noteCount++;    _updateSystemBar(); });
-  Bus.on(EVENTS.NOTE_DELETED,   () => { _noteCount = Math.max(0, _noteCount - 1);   _updateSystemBar(); });
+  Bus.on(EVENTS.NOTE_DELETED,   () => { _noteCount   = Math.max(0, _noteCount - 1);   _updateSystemBar(); });
   Bus.on(EVENTS.TASK_CREATED,   () => { _taskPending++;  _updateSystemBar(); });
   Bus.on(EVENTS.TASK_COMPLETED, () => { _taskPending = Math.max(0, _taskPending - 1); _updateSystemBar(); _spawnPulse(); });
   Bus.on(EVENTS.TASK_DELETED,   () => { _taskPending = Math.max(0, _taskPending - 1); _updateSystemBar(); });
 
-  // Memory constellation updates
   Bus.on(EVENTS.MEMORY_CREATED, () => { _memoryCount++; _buildConstellation(); });
   Bus.on(EVENTS.MEMORY_DELETED, () => { _memoryCount = Math.max(0, _memoryCount - 1); _buildConstellation(); });
 
   Bus.on(EVENTS.NOTE_CREATED,  _spawnPulse);
   Bus.on(EVENTS.TASK_CREATED,  _spawnPulse);
 
-  // Orb state reactions
   Bus.on(EVENTS.ORB_STATE_CHANGED, ({ state }) => {
     if (state === 'success') {
       _spawnPulse(); setTimeout(_spawnPulse, 260); setTimeout(_spawnPulse, 520);
       pulseOrb();
-      _triggerEnergyWave(1.2);  // Phase J-4: harmonic pulse on success
+      _triggerEnergyWave(1.2);
     }
     if (state === 'error') {
       _spawnPulse();
-      // Phase J-8: temporary instability → outer rings scramble then self-correct
+      // Instability: outer rings scramble, network disrupts then self-corrects
       for (const ring of _outerRings) {
-        ring.gaps       = _makeRingGaps(ring.segs, 0.02, 0.42);
-        ring.targetGaps = _makeRingGaps(ring.segs, 0.08, 0.18);
+        ring.gaps       = _makeRingGaps(ring.segs, 0.02, 0.44);
+        ring.targetGaps = _makeRingGaps(ring.segs, 0.07, 0.18);
       }
+      _netAlpha  *= 0.3;
+      _signals.length = 0;
     }
   });
 
-  // Phase J-4: Reactive energy waves on user actions
+  // Phase K event reactions — network illumination + signals
   Bus.on(EVENTS.NOTE_CREATED,   () => _triggerEnergyWave(0.65));
   Bus.on(EVENTS.TASK_COMPLETED, () => _triggerEnergyWave(1.00));
   Bus.on(EVENTS.MEMORY_CREATED, () => _triggerEnergyWave(0.80));
 
   _buildConstellation();
-  _buildDataNetwork();
+  _buildNetwork();
 
   _updateSystemBar();
   _updateGreeting();
   setInterval(_updateSystemBar, 1000);
-  setInterval(_updateGreeting, 60000);
+  setInterval(_updateGreeting,  60000);
 
   _rafId = requestAnimationFrame(_loop);
 }
@@ -276,9 +268,9 @@ async function _refreshCounts() {
       DB.tasks.getByStatus('pending'),
       DB.memories.count(),
     ]);
-    _noteCount    = notes.length;
-    _taskPending  = pending.length;
-    _memoryCount  = memCount ?? 0;
+    _noteCount   = notes.length;
+    _taskPending = pending.length;
+    _memoryCount = memCount ?? 0;
   } catch { /* non-fatal */ }
 }
 
@@ -291,25 +283,21 @@ function _updateLiveParams() {
   for (const k of Object.keys(_live)) {
     if (k in target) _live[k] += (target[k] - _live[k]) * L;
   }
-
-  // Awareness modifiers — applied at draw time, not stored in _live
   const ora  = getAwareness();
   _awIdleMul = ora.idleLevel === 2 ? 0.42 : ora.idleLevel === 1 ? 0.70 : 1.0;
   _awTimeMod = ora.timeModifier;
   _awEnergy  = 1 + ora.energy * 0.28;
 }
 
-// ── Phase J-5: Focus mode update ─────────────────────────────
+// ── Focus mode ────────────────────────────────────────────────
 
 function _updateFocusMode() {
   const dist = Math.sqrt(_mouseNX * _mouseNX + _mouseNY * _mouseNY);
-  const focusTarget = dist < 0.22 ? 1.0
-                    : dist < 0.58 ? (0.58 - dist) / 0.36
-                    : 0.0;
-  _focusLevel += (focusTarget - _focusLevel) * 0.028;
+  const tgt  = dist < 0.22 ? 1.0 : dist < 0.58 ? (0.58 - dist) / 0.36 : 0;
+  _focusLevel += (tgt - _focusLevel) * 0.028;
 }
 
-// ── Phase J-1: Outer ring update ─────────────────────────────
+// ── Outer ring update ─────────────────────────────────────────
 
 function _updateOuterRings() {
   const now        = Date.now();
@@ -318,14 +306,10 @@ function _updateOuterRings() {
 
   for (const ring of _outerRings) {
     ring.angle += ring.speed * speedMod;
-
-    // Smooth gap and lineWidth transitions each frame
     for (let i = 0; i < ring.gaps.length; i++) {
       ring.gaps[i] += (ring.targetGaps[i] - ring.gaps[i]) * 0.006;
     }
     ring.lw += (ring.targetLw - ring.lw) * 0.004;
-
-    // Periodic recalibration
     if (now >= ring.nextRecal) {
       ring.targetGaps = _makeRingGaps(ring.segs, 0.06, 0.28);
       ring.targetLw   = ring.baseLw * (0.65 + Math.random() * 0.70);
@@ -334,28 +318,170 @@ function _updateOuterRings() {
   }
 }
 
-// ── Phase J-2: Data network update ───────────────────────────
+function _checkFormation() {
+  const now = Date.now();
+  if (!_formationActive && now >= _nextFormation) {
+    _formationActive   = true;
+    _formationBorn     = now;
+    _formationDuration = 3500 + Math.random() * 5000;
+    // Coordinated simultaneous recalibration of all rings
+    for (const ring of _outerRings) {
+      ring.targetGaps = _makeRingGaps(ring.segs, 0.04, 0.34);
+      ring.targetLw   = ring.baseLw * (0.80 + Math.random() * 0.80);
+    }
+    _nextFormation = now + _randMs(20000, 60000);
+  }
+  if (_formationActive && (now - _formationBorn) > _formationDuration) {
+    // Settle rings back to resting state
+    for (const ring of _outerRings) {
+      ring.targetGaps = _makeRingGaps(ring.segs, 0.07, 0.18);
+      ring.targetLw   = ring.baseLw;
+    }
+    _formationActive = false;
+  }
+}
 
-function _updateDataNetwork() {
+// ── Neural network (Phase K) ──────────────────────────────────
+
+function _buildNetwork() {
+  _netNodes.length = 0;
+  const count = _isMobile ? 4 : 5;
+  for (let i = 0; i < count; i++) {
+    // Even angular distribution with small jitter — deliberate, not random
+    const ang = (i / count) * TWO_PI + (Math.random() - 0.5) * 0.55;
+    const r   = 52 + Math.random() * 36;
+    _netNodes.push({
+      ang,
+      r,
+      dAng:  (Math.random() - 0.5) * 0.00018,  // very slow drift
+      dR:    (Math.random() - 0.5) * 0.022,
+      size:  1.1 + Math.random() * 0.7,
+      alpha: 0.55 + Math.random() * 0.30,
+      conns: [],
+    });
+  }
+  // Connect each node to its 2 nearest neighbours
+  for (let i = 0; i < _netNodes.length; i++) {
+    const ni = _netNodes[i];
+    const ax = Math.cos(ni.ang) * ni.r;
+    const ay = Math.sin(ni.ang) * ni.r;
+    const ranked = _netNodes
+      .map((nj, j) => {
+        if (j === i) return { j, d: Infinity };
+        const bx = Math.cos(nj.ang) * nj.r;
+        const by = Math.sin(nj.ang) * nj.r;
+        return { j, d: Math.hypot(ax - bx, ay - by) };
+      })
+      .sort((p, q) => p.d - q.d);
+    ni.conns = ranked.slice(0, 2).map(x => x.j);
+  }
+}
+
+function _updateNetwork() {
   const now   = Date.now();
   const state = State.get('orbState') || 'idle';
-  _netTarget  = state === 'offline' ? 0.06 : state === 'thinking' ? 0.80 : 0.50;
-  _netAlpha  += (_netTarget - _netAlpha) * 0.010;
 
-  // Drift nodes every frame
+  const alphaTargets = {
+    offline: 0.04, idle: 0.68, listening: 0.80,
+    thinking: 0.94, responding: 0.74, success: 0.80, error: 0.55,
+  };
+
+  if (_netFading) {
+    // Smooth fade-down before topology rebuild
+    _netAlpha *= 0.90;
+    if (_netAlpha < 0.04) {
+      _buildNetwork();
+      _signals.length = 0;
+      _netFading  = false;
+      _netTarget  = alphaTargets[state] ?? 0.68;
+    }
+  } else {
+    _netTarget = (alphaTargets[state] ?? 0.68) * (1 + _focusLevel * 0.22);
+    _netAlpha += (_netTarget - _netAlpha) * 0.012;
+  }
+
+  // Slow node drift
   for (const n of _netNodes) {
     n.ang += n.dAng;
     n.r   += n.dR;
-    if (n.r < 44 || n.r > 96) {
-      n.dR *= -0.70;
-      n.r   = Math.max(44, Math.min(96, n.r));
-    }
+    if (n.r < 46 || n.r > 88) { n.dR *= -0.7; n.r = Math.max(46, Math.min(88, n.r)); }
   }
 
-  // Periodic topology rebuild (fade out handled via _netAlpha targeting 0 briefly)
-  if (now >= _nextNetEvt) {
-    _buildDataNetwork();
-    _nextNetEvt = now + _randMs(25000, 55000);
+  // Trigger reconfiguration (smooth — feels like forming a new thought)
+  if (!_netFading && now >= _nextNetEvt) {
+    _netFading  = true;
+    _nextNetEvt = now + _randMs(15000, 30000);
+  }
+}
+
+// ── Signal propagation (Phase K) ─────────────────────────────
+
+function _maybeSpawnSignal() {
+  if (_netNodes.length < 2 || _signals.length >= MAX_SIGNALS) return;
+  if (_netAlpha < 0.08) return;
+
+  const state = State.get('orbState') || 'idle';
+  const rates = {
+    idle: 0.004, listening: 0.010, thinking: 0.020,
+    responding: 0.014, success: 0.007, error: 0.005, offline: 0.001,
+  };
+  const rate = (rates[state] ?? 0.004) * _awIdleMul * _awTimeMod
+             * (1 + _sigBoost * 2.5) * (1 + _focusLevel * 0.6);
+
+  if (Math.random() >= rate) return;
+
+  const fromIdx = Math.floor(Math.random() * _netNodes.length);
+  const from    = _netNodes[fromIdx];
+  if (!from || !from.conns.length) return;
+
+  // State-aware direction bias:
+  // LISTENING  → prefer signals toward lower-r nodes (inward)
+  // RESPONDING → prefer signals toward higher-r nodes (outward)
+  let candidateConns = from.conns;
+  if (state === 'listening') {
+    const inner = from.conns.filter(j => _netNodes[j]?.r < from.r);
+    if (inner.length) candidateConns = inner;
+  } else if (state === 'responding') {
+    const outer = from.conns.filter(j => _netNodes[j]?.r > from.r);
+    if (outer.length) candidateConns = outer;
+  }
+
+  const toIdx = candidateConns[Math.floor(Math.random() * candidateConns.length)];
+  _signals.push({
+    fromIdx,
+    toIdx,
+    t:     0,
+    speed: 0.0028 + Math.random() * 0.0040,
+    alpha: 0.60 + Math.random() * 0.35,
+  });
+}
+
+function _updateSignals() {
+  if (_sigBoost > 0) _sigBoost = Math.max(0, _sigBoost - 0.010);
+
+  for (let i = _signals.length - 1; i >= 0; i--) {
+    const sig = _signals[i];
+    // Slight acceleration as signal travels (deliberate, not mechanical)
+    const accel = 1 + sig.t * 0.40;
+    sig.t += sig.speed * accel * _awTimeMod;
+
+    if (sig.t >= 1.0) {
+      const arrivedAt = sig.toIdx;
+      const arrived   = _netNodes[arrivedAt];
+      // Chain to next node with 60% probability
+      if (arrived?.conns.length > 0 && Math.random() < 0.60) {
+        const fwd = arrived.conns.filter(c => c !== sig.fromIdx);
+        const nxt = fwd.length > 0
+          ? fwd[Math.floor(Math.random() * fwd.length)]
+          : arrived.conns[0];
+        sig.fromIdx = arrivedAt;
+        sig.toIdx   = nxt;
+        sig.t       = 0;
+        sig.speed   = 0.0028 + Math.random() * 0.0040;
+      } else {
+        _signals.splice(i, 1);
+      }
+    }
   }
 }
 
@@ -366,11 +492,13 @@ function _loop() {
 
   _frame++;
   _updateLiveParams();
-  _updateFocusMode();      // Phase J-5
-  _updateOuterRings();     // Phase J-1
-  _updateDataNetwork();    // Phase J-2
+  _updateFocusMode();
+  _updateOuterRings();
+  _checkFormation();
+  _updateNetwork();
+  _maybeSpawnSignal();
+  _updateSignals();
 
-  // Scan speed with micro-boost overlay
   let scanDelta = _live.scanSpeed;
   if (_microScanBoost) {
     const age = Date.now() - _microScanBoost.born;
@@ -382,25 +510,10 @@ function _loop() {
     }
   }
 
-  // Apply awareness idle/time multipliers to rotation speeds
   const speedMod = _awIdleMul * _awTimeMod;
   _scanAngle += scanDelta * speedMod;
   _arcAngle1 += 0.0018  * speedMod;
   _arcAngle2 -= 0.0008  * speedMod;
-
-  // Phase J-3: Enhanced satellite update (burst, glow decay, trail accumulation)
-  const _loopNow = Date.now();
-  for (const sat of _satellites) {
-    const bMul = (sat.burstEnd > _loopNow) ? sat.burstMul : 1.0;
-    sat.angle  += sat.speed * speedMod * bMul;
-    sat.r      += (sat.targetR - sat.r) * 0.012;
-    if (sat.glowLevel > 0) sat.glowLevel = Math.max(0, sat.glowLevel - 0.004);
-    // Accumulate position for extended trail
-    const sx = CX + Math.cos(sat.angle) * sat.r;
-    const sy = CY + Math.sin(sat.angle) * sat.r;
-    sat.trail.push({ x: sx, y: sy, t: _loopNow });
-    if (sat.trail.length > (_isMobile ? 20 : 45)) sat.trail.shift();
-  }
 
   _checkIdlePulse();
   _checkFragment();
@@ -408,15 +521,17 @@ function _loop() {
   _checkMicroEvent();
 
   _ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  // Draw order: deepest → topmost
   _drawMouseGlow();
-  _drawFocusGlow();        // Phase J-5
-  _drawDepthHalo();        // Phase J-7
-  if (!_isMobile) _drawDataNetwork();   // Phase J-2
-  _drawTicks();            // Phase J-7 enhanced (bg ticks added)
-  _drawArcs();
-  _drawOuterRings();       // Phase J-1
+  _drawFocusGlow();
+  _drawDepthHalo();
+  _drawNetwork();      // connection lines + nodes (inner layer)
+  _drawSignals();      // signals on top of network lines
+  _drawTicks();        // tick ring + background depth ring
+  _drawArcs();         // rotating arc segments
+  _drawOuterRings();   // outer ring system (hero element)
   if (!_isMobile) _drawConstellation();
-  _drawSatellites();       // Phase J-3 enhanced
   _drawEnergyArcs();
   _drawScanner();
   _drawPulses();
@@ -444,15 +559,15 @@ function _drawMouseGlow() {
   _ctx.restore();
 }
 
-// ── Phase J-5: Focus mode glow ────────────────────────────────
+// ── Draw: focus glow ──────────────────────────────────────────
 
 function _drawFocusGlow() {
   if (_focusLevel < 0.02) return;
   const a = _focusLevel * 0.055 * _awTimeMod;
   const g = _ctx.createRadialGradient(CX, CY, 55, CX, CY, 260);
-  g.addColorStop(0,   _rgba(0));
+  g.addColorStop(0,    _rgba(0));
   g.addColorStop(0.38, _rgba(a * 0.4));
-  g.addColorStop(1,   _rgba(a));
+  g.addColorStop(1,    _rgba(a));
   _ctx.save();
   _ctx.beginPath();
   _ctx.arc(CX, CY, 260, 0, TWO_PI);
@@ -461,15 +576,15 @@ function _drawFocusGlow() {
   _ctx.restore();
 }
 
-// ── Phase J-7: Outer ambient depth halo ──────────────────────
+// ── Draw: outer ambient halo ──────────────────────────────────
 
 function _drawDepthHalo() {
   const a = 0.038 * _awTimeMod * _awIdleMul * (1 + _focusLevel * 0.55);
   if (a < 0.003) return;
   const g = _ctx.createRadialGradient(CX, CY, 195, CX, CY, 262);
-  g.addColorStop(0,   _rgba(0));
+  g.addColorStop(0,    _rgba(0));
   g.addColorStop(0.55, _rgba(a));
-  g.addColorStop(1,   _rgba(0));
+  g.addColorStop(1,    _rgba(0));
   _ctx.save();
   _ctx.beginPath();
   _ctx.arc(CX, CY, 262, 0, TWO_PI);
@@ -478,55 +593,23 @@ function _drawDepthHalo() {
   _ctx.restore();
 }
 
-// ── Phase J-2: Data network draw ─────────────────────────────
+// ── Draw: neural network (connection lines + nodes) ───────────
 
-function _buildDataNetwork() {
-  _netNodes.length = 0;
-  const count = _isMobile ? 5 : 8;
-  for (let i = 0; i < count; i++) {
-    const ang = (i / count) * TWO_PI + (Math.random() - 0.5) * 0.70;
-    const r   = 50 + Math.random() * 44;
-    _netNodes.push({
-      ang,
-      r,
-      dAng:  (Math.random() - 0.5) * 0.00032,
-      dR:    (Math.random() - 0.5) * 0.038,
-      size:  0.9 + Math.random() * 0.8,
-      alpha: 0.40 + Math.random() * 0.35,
-      conns: [],
-    });
-  }
-  // Connect each node to its 2 nearest neighbors
-  for (let i = 0; i < _netNodes.length; i++) {
-    const ni = _netNodes[i];
-    const ax = Math.cos(ni.ang) * ni.r;
-    const ay = Math.sin(ni.ang) * ni.r;
-    const ranked = _netNodes
-      .map((nj, j) => {
-        if (j === i) return { j, d: Infinity };
-        const bx = Math.cos(nj.ang) * nj.r;
-        const by = Math.sin(nj.ang) * nj.r;
-        return { j, d: Math.hypot(ax - bx, ay - by) };
-      })
-      .sort((p, q) => p.d - q.d);
-    ni.conns = ranked.slice(0, 2).map(x => x.j);
-  }
-}
+function _drawNetwork() {
+  if (_netNodes.length === 0 || _netAlpha < 0.01) return;
 
-function _drawDataNetwork() {
-  if (_netNodes.length === 0 || _netAlpha < 0.005) return;
-
-  const timeFade   = _awTimeMod * _awIdleMul;
-  const focusBoost = 1 + _focusLevel * 1.0;
   const state      = State.get('orbState') || 'idle';
-  const density    = state === 'thinking' ? 1.5 : 1.0;
-  const base       = _netAlpha * timeFade * density * focusBoost;
-  if (base < 0.004) return;
+  const timeFade   = _awTimeMod * _awIdleMul;
+  const density    = state === 'thinking' ? 1.35 : state === 'listening' ? 1.15 : 1.0;
+  const focusMul   = 1 + _focusLevel * 0.35;
+  const base       = _netAlpha * timeFade * density * focusMul;
+  if (base < 0.006) return;
 
   _ctx.save();
 
-  // Connection lines
-  _ctx.lineWidth = 0.5;
+  // Connection lines — the primary visual architecture
+  _ctx.lineWidth = 0.8;
+  _ctx.lineCap   = 'round';
   for (let i = 0; i < _netNodes.length; i++) {
     const ni = _netNodes[i];
     const ax = CX + Math.cos(ni.ang) * ni.r;
@@ -538,7 +621,7 @@ function _drawDataNetwork() {
       _ctx.beginPath();
       _ctx.moveTo(ax, ay);
       _ctx.lineTo(bx, by);
-      _ctx.strokeStyle = _rgba(base * 0.14);
+      _ctx.strokeStyle = _rgba(base * 0.22);
       _ctx.stroke();
     }
   }
@@ -548,35 +631,102 @@ function _drawDataNetwork() {
     const nx = CX + Math.cos(n.ang) * n.r;
     const ny = CY + Math.sin(n.ang) * n.r;
     const a  = n.alpha * base;
-    if (a < 0.004) continue;
+    if (a < 0.005) continue;
 
-    // Soft glow — desktop only (radial gradients expensive on mobile)
-    const grd = _ctx.createRadialGradient(nx, ny, 0, nx, ny, n.size * 3.5);
-    grd.addColorStop(0, _rgba(a));
-    grd.addColorStop(1, _rgba(0));
-    _ctx.fillStyle = grd;
-    _ctx.beginPath();
-    _ctx.arc(nx, ny, n.size * 3.5, 0, TWO_PI);
-    _ctx.fill();
+    // Soft glow (desktop only — radial gradients expensive)
+    if (!_isMobile) {
+      const grd = _ctx.createRadialGradient(nx, ny, 0, nx, ny, n.size * 4.0);
+      grd.addColorStop(0, _rgba(a * 0.60));
+      grd.addColorStop(1, _rgba(0));
+      _ctx.fillStyle = grd;
+      _ctx.beginPath();
+      _ctx.arc(nx, ny, n.size * 4.0, 0, TWO_PI);
+      _ctx.fill();
+    }
 
-    // Hard point
+    // Hard node point
     _ctx.beginPath();
     _ctx.arc(nx, ny, n.size, 0, TWO_PI);
-    _ctx.fillStyle = _rgba(Math.min(1, a * 2.2));
+    _ctx.fillStyle = _rgba(Math.min(1, a * 1.8));
     _ctx.fill();
   }
 
   _ctx.restore();
 }
 
-// ── Draw: tick marks (Phase J-7 enhanced) ────────────────────
+// ── Draw: signal propagation ──────────────────────────────────
+
+function _drawSignals() {
+  if (_signals.length === 0 || _netNodes.length === 0 || _netAlpha < 0.06) return;
+  const timeFade = _awTimeMod * _awIdleMul;
+  const netA     = _netAlpha;
+  _ctx.save();
+  _ctx.lineCap = 'round';
+
+  for (const sig of _signals) {
+    const from = _netNodes[sig.fromIdx];
+    const to   = _netNodes[sig.toIdx];
+    if (!from || !to) continue;
+
+    const fx = CX + Math.cos(from.ang) * from.r;
+    const fy = CY + Math.sin(from.ang) * from.r;
+    const tx = CX + Math.cos(to.ang)   * to.r;
+    const ty = CY + Math.sin(to.ang)   * to.r;
+    const sx = fx + (tx - fx) * sig.t;
+    const sy = fy + (ty - fy) * sig.t;
+    const a  = sig.alpha * timeFade * netA;
+
+    // Route illumination — full edge brightens while signal is on it
+    _ctx.beginPath();
+    _ctx.moveTo(fx, fy);
+    _ctx.lineTo(tx, ty);
+    _ctx.strokeStyle = _rgba(a * 0.22);
+    _ctx.lineWidth   = 0.8;
+    _ctx.stroke();
+
+    // Fading gradient trail behind the signal
+    if (sig.t > 0.02) {
+      const grad = _ctx.createLinearGradient(fx, fy, sx, sy);
+      grad.addColorStop(0,   _rgba(0));
+      grad.addColorStop(0.45, _rgba(a * 0.18));
+      grad.addColorStop(1,   _rgba(a * 0.55));
+      _ctx.beginPath();
+      _ctx.moveTo(fx, fy);
+      _ctx.lineTo(sx, sy);
+      _ctx.strokeStyle = grad;
+      _ctx.lineWidth   = 1.1;
+      _ctx.stroke();
+    }
+
+    // Signal glow
+    if (!_isMobile) {
+      const grd = _ctx.createRadialGradient(sx, sy, 0, sx, sy, 5.0);
+      grd.addColorStop(0, _rgba(a * 0.85));
+      grd.addColorStop(1, _rgba(0));
+      _ctx.fillStyle = grd;
+      _ctx.beginPath();
+      _ctx.arc(sx, sy, 5.0, 0, TWO_PI);
+      _ctx.fill();
+    }
+
+    // Hard signal point
+    _ctx.beginPath();
+    _ctx.arc(sx, sy, 1.5, 0, TWO_PI);
+    _ctx.fillStyle = _rgba(Math.min(1, a * 2.0));
+    _ctx.fill();
+  }
+
+  _ctx.restore();
+}
+
+// ── Draw: tick marks (with depth bg ring) ────────────────────
 
 function _drawTicks() {
   const count      = 60;
   const majorEvery = 5;
   _ctx.save();
 
-  // Phase J-7: Background depth ring at R=128 (desktop only, very subtle)
+  // Background depth ring at R=128 (desktop)
   if (!_isMobile) {
     for (let i = 0; i < 48; i++) {
       const angle = (TWO_PI / 48) * i - HALF_PI;
@@ -590,18 +740,16 @@ function _drawTicks() {
     }
   }
 
-  // Foreground ticks (existing, unchanged)
+  // Foreground ticks
   for (let i = 0; i < count; i++) {
     const angle   = (TWO_PI / count) * i - HALF_PI;
     const isMajor = i % majorEvery === 0;
     const len     = isMajor ? 7 : 3.5;
     const alpha   = (isMajor ? _live.tickAlpha : _live.tickAlpha * 0.43) * _awTimeMod * _awIdleMul;
-
     const x1 = CX + Math.cos(angle) * R_TICKS;
     const y1 = CY + Math.sin(angle) * R_TICKS;
     const x2 = CX + Math.cos(angle) * (R_TICKS + len);
     const y2 = CY + Math.sin(angle) * (R_TICKS + len);
-
     _ctx.beginPath();
     _ctx.moveTo(x1, y1);
     _ctx.lineTo(x2, y2);
@@ -620,7 +768,7 @@ function _drawArcs() {
 
   const arc1Start = _arcAngle1;
   const arc1Span  = (100 / 180) * Math.PI;
-  const gap       = (12 / 180)  * Math.PI;
+  const gap       = (12  / 180) * Math.PI;
 
   _ctx.strokeStyle = _rgba(0.38 * s);
   _ctx.lineWidth   = 1.2;
@@ -647,25 +795,26 @@ function _drawArcs() {
   _ctx.restore();
 }
 
-// ── Phase J-1: Draw outer ring system ────────────────────────
+// ── Draw: outer ring system ───────────────────────────────────
 
 function _drawOuterRings() {
   const focusBoost = 1 + _focusLevel * 0.50;
   const timeFade   = _awTimeMod * _awIdleMul;
   const state      = State.get('orbState') || 'idle';
-  const stateMul   = state === 'thinking' ? 1.45 : state === 'listening' ? 1.25 : state === 'error' ? 0.70 : 1.0;
+  const stateMul   = state === 'thinking' ? 1.45 : state === 'listening' ? 1.25
+                   : state === 'error'    ? 0.70 : 1.0;
+  const formMul    = _formationActive ? 1.30 : 1.0;
 
   _ctx.save();
   _ctx.lineCap = 'butt';
 
   for (const ring of _outerRings) {
-    const alpha = ring.baseAlpha * timeFade * focusBoost * stateMul;
+    const alpha = ring.baseAlpha * timeFade * focusBoost * stateMul * formMul;
     if (alpha < 0.006) continue;
 
-    const totalGap  = ring.gaps.reduce((s, g) => s + g, 0);
-    const arcFrac   = Math.max(0.08, 1 - totalGap);
-    const segFrac   = arcFrac / ring.segs;
-    const segSpan   = segFrac * TWO_PI;
+    const totalGap = ring.gaps.reduce((s, g) => s + g, 0);
+    const arcFrac  = Math.max(0.08, 1 - totalGap);
+    const segSpan  = (arcFrac / ring.segs) * TWO_PI;
 
     _ctx.strokeStyle = _rgba(alpha);
     _ctx.lineWidth   = ring.lw;
@@ -764,11 +913,11 @@ function _checkFragment() {
   const angle = Math.random() * TWO_PI;
   const dist  = R_LABELS + 10 + Math.random() * 20;
   _fragments.push({
-    text: FRAGMENT_POOL[Math.floor(Math.random() * FRAGMENT_POOL.length)],
-    x:   CX + Math.cos(angle) * dist,
-    y:   CY + Math.sin(angle) * dist,
-    born: Date.now(),
-    life: 1800 + Math.random() * 800,
+    text:  FRAGMENT_POOL[Math.floor(Math.random() * FRAGMENT_POOL.length)],
+    x:     CX + Math.cos(angle) * dist,
+    y:     CY + Math.sin(angle) * dist,
+    born:  Date.now(),
+    life:  1800 + Math.random() * 800,
   });
 }
 
@@ -803,15 +952,15 @@ function _drawCardinalLabels() {
     { angle:  Math.PI, align: 'right',  label: _getUptimeLabel() },
   ];
   for (const { angle, align, label } of positions) {
-    _ctx.textAlign    = align;
-    _ctx.fillStyle    = _rgba(0.38 * _awTimeMod);
+    _ctx.textAlign     = align;
+    _ctx.fillStyle     = _rgba(0.38 * _awTimeMod);
     _ctx.letterSpacing = '0.1em';
     _ctx.fillText(label, CX + Math.cos(angle) * R_LABELS, CY + Math.sin(angle) * R_LABELS);
   }
   _ctx.restore();
 }
 
-// ── Memory constellation (Phase C) ───────────────────────────
+// ── Memory constellation ──────────────────────────────────────
 
 function _buildConstellation() {
   _conNodes.length = 0;
@@ -824,14 +973,12 @@ function _buildConstellation() {
     _conNodes.push({
       angle,
       r,
-      driftSpeed: (Math.random() - 0.5) * 0.00022,
-      size:       1.1 + Math.random() * 0.9,
-      alpha:      0.20 + Math.random() * 0.20,
+      driftSpeed:  (Math.random() - 0.5) * 0.00022,
+      size:        1.1 + Math.random() * 0.9,
+      alpha:       0.20 + Math.random() * 0.20,
       connections: [],
     });
   }
-
-  // Connect nearby nodes (angular proximity)
   for (let i = 0; i < _conNodes.length; i++) {
     for (let j = i + 1; j < _conNodes.length; j++) {
       const diff = Math.abs(_conNodes[i].angle - _conNodes[j].angle);
@@ -849,10 +996,8 @@ function _drawConstellation() {
   const timeFade = _awTimeMod * _awIdleMul;
   _ctx.save();
 
-  // Drift nodes
   for (const n of _conNodes) n.angle += n.driftSpeed;
 
-  // Connections
   _ctx.lineWidth = 0.5;
   for (let i = 0; i < _conNodes.length; i++) {
     const n  = _conNodes[i];
@@ -870,12 +1015,10 @@ function _drawConstellation() {
     }
   }
 
-  // Nodes
   for (const n of _conNodes) {
     const nx = CX + Math.cos(n.angle) * n.r;
     const ny = CY + Math.sin(n.angle) * n.r;
     const a  = n.alpha * timeFade;
-    // Soft halo
     const glow = _ctx.createRadialGradient(nx, ny, 0, nx, ny, n.size * 3.5);
     glow.addColorStop(0, _rgba(a));
     glow.addColorStop(1, _rgba(0));
@@ -883,87 +1026,10 @@ function _drawConstellation() {
     _ctx.beginPath();
     _ctx.arc(nx, ny, n.size * 3.5, 0, TWO_PI);
     _ctx.fill();
-    // Core point
     _ctx.beginPath();
     _ctx.arc(nx, ny, n.size, 0, TWO_PI);
     _ctx.fillStyle = _rgba(a * 2);
     _ctx.fill();
-  }
-  _ctx.restore();
-}
-
-// ── Orbital satellites (Phase J-3: enhanced) ─────────────────
-
-function _drawSatellites() {
-  const now      = Date.now();
-  const timeFade = _awTimeMod * _awIdleMul;
-  _ctx.save();
-  _ctx.lineCap = 'round';
-
-  for (const sat of _satellites) {
-    const isBursting = sat.burstEnd > now;
-    const glow       = sat.glowLevel * timeFade;
-    const sx = CX + Math.cos(sat.angle) * sat.r;
-    const sy = CY + Math.sin(sat.angle) * sat.r;
-
-    // Phase J-3: Extended positional trail from history
-    if (sat.trail.length > 1) {
-      for (let i = 1; i < sat.trail.length; i++) {
-        const p0   = sat.trail[i - 1];
-        const p1   = sat.trail[i];
-        const age  = now - p0.t;
-        const tFade = Math.max(0, 1 - age / 2800);
-        const ta = tFade * sat.alpha * 0.16 * timeFade * (1 + glow * 0.8);
-        if (ta < 0.004) continue;
-        _ctx.beginPath();
-        _ctx.moveTo(p0.x, p0.y);
-        _ctx.lineTo(p1.x, p1.y);
-        _ctx.strokeStyle = _rgba(ta);
-        _ctx.lineWidth   = sat.size * 0.38;
-        _ctx.stroke();
-      }
-    }
-
-    // Trailing arc (classic — kept from Phase F)
-    const trailSpan = Math.abs(sat.speed) * (isBursting ? 70 : 22);
-    const trailDir  = sat.speed > 0 ? -1 : 1;
-    const t0 = sat.angle + trailDir * trailSpan;
-    const t1 = sat.angle;
-    const grad = _ctx.createLinearGradient(
-      CX + Math.cos(t0) * sat.r, CY + Math.sin(t0) * sat.r,
-      sx, sy,
-    );
-    grad.addColorStop(0, _rgba(0));
-    grad.addColorStop(1, _rgba(sat.alpha * (0.35 + glow * 0.30) * timeFade));
-    _ctx.beginPath();
-    _ctx.arc(CX, CY, sat.r, t0, t1, sat.speed < 0);
-    _ctx.strokeStyle = grad;
-    _ctx.lineWidth   = sat.size * 0.65;
-    _ctx.stroke();
-
-    // Phase J-3: Burst glow halo
-    if (glow > 0.05) {
-      const halo = _ctx.createRadialGradient(sx, sy, 0, sx, sy, sat.size * 5.5);
-      halo.addColorStop(0, _rgba(glow * sat.alpha * 0.55 * timeFade));
-      halo.addColorStop(1, _rgba(0));
-      _ctx.fillStyle = halo;
-      _ctx.beginPath();
-      _ctx.arc(sx, sy, sat.size * 5.5, 0, TWO_PI);
-      _ctx.fill();
-    }
-
-    // Satellite dot
-    _ctx.beginPath();
-    _ctx.arc(sx, sy, sat.size * (isBursting ? 1.35 : 1.0), 0, TWO_PI);
-    _ctx.fillStyle = _rgba(sat.alpha * (1 + glow * 0.45) * timeFade);
-    _ctx.fill();
-
-    // Micro ring
-    _ctx.beginPath();
-    _ctx.arc(sx, sy, sat.size * 2.2, 0, TWO_PI);
-    _ctx.strokeStyle = _rgba(sat.alpha * 0.22 * timeFade);
-    _ctx.lineWidth   = 0.5;
-    _ctx.stroke();
   }
   _ctx.restore();
 }
@@ -1005,8 +1071,8 @@ function _drawEnergyArcs() {
     const arc = _energyArcs[i];
     const age = now - arc.born;
     if (age > arc.life) { _energyArcs.splice(i, 1); continue; }
-    const t   = age / arc.life;
-    const env = t < 0.12 ? t / 0.12 : t > 0.72 ? (1 - t) / 0.28 : 1;
+    const t     = age / arc.life;
+    const env   = t < 0.12 ? t / 0.12 : t > 0.72 ? (1 - t) / 0.28 : 1;
     const alpha = arc.peakAlpha * env * _awTimeMod * _awIdleMul;
     _ctx.strokeStyle = _rgba(alpha);
     _ctx.lineWidth   = arc.w;
@@ -1033,28 +1099,36 @@ function _drawArcBezier(a1, a2, r, bow) {
   _ctx.stroke();
 }
 
-// ── Phase J-4: Reactive energy wave ──────────────────────────
-// Cascading pulse: core → inner ring → outer rings → satellites
+// ── Reactive energy wave ──────────────────────────────────────
+// Cascade: core pulse → network flash → outer ring ripple
+// Also spawns 2 signals immediately to visualise the event.
 
 function _triggerEnergyWave(intensity) {
   const t = intensity ?? 1.0;
-  setTimeout(() => _pulses.push({ r: 48,            born: Date.now(), fast: true  }),   0);
-  setTimeout(() => _pulses.push({ r: R_PULSE_START,  born: Date.now(), fast: false }), 190);
-  setTimeout(() => _pulses.push({ r: R_TICKS + 6,    born: Date.now(), fast: true  }), 370);
-  if (t >= 0.75) {
-    setTimeout(() => {
-      for (const s of _satellites) {
-        s.burstEnd  = Date.now() + 1800;
-        s.burstMul  = 2.4 + t * 0.8;
-        s.glowLevel = Math.min(1, s.glowLevel + 0.65);
-      }
-    }, 540);
-  }
+
+  // Cascading pulse rings
+  setTimeout(() => _pulses.push({ r: 48,           born: Date.now(), fast: true  }),   0);
+  setTimeout(() => _pulses.push({ r: R_PULSE_START, born: Date.now(), fast: false }), 190);
+  setTimeout(() => _pulses.push({ r: R_TICKS + 6,  born: Date.now(), fast: true  }), 370);
+
+  // Network flash + signal burst
+  _sigBoost   = Math.min(1, _sigBoost + t * 0.90);
+  _netAlpha   = Math.min(1, _netAlpha + t * 0.35);
+
+  // Spawn 2 immediate signals if network is populated
+  setTimeout(() => {
+    for (let i = 0; i < 2 && _signals.length < MAX_SIGNALS; i++) {
+      if (!_netNodes.length) break;
+      const fromIdx = Math.floor(Math.random() * _netNodes.length);
+      const from    = _netNodes[fromIdx];
+      if (!from?.conns.length) continue;
+      const toIdx = from.conns[Math.floor(Math.random() * from.conns.length)];
+      _signals.push({ fromIdx, toIdx, t: 0, speed: 0.005 + Math.random() * 0.004, alpha: 0.90 });
+    }
+  }, 120);
 }
 
-// ── Ambient micro-events (Phase E + Phase J-6) ───────────────
-// Phase J-6 adds 3 new event types (roll ≥ 0.68):
-//   outer ring recalibration, deep scan pulse, satellite burst
+// ── Micro-events ──────────────────────────────────────────────
 
 function _checkMicroEvent() {
   if (Date.now() < _nextMicroEvent) return;
@@ -1066,58 +1140,40 @@ function _checkMicroEvent() {
   const roll = Math.random();
 
   if (roll < 0.18) {
-    // Scanner sweep burst (existing)
     _microScanBoost = { born: Date.now(), duration: 2200, multiplier: 3.5 };
-
   } else if (roll < 0.34) {
-    // Triple energy ripple (existing)
     _spawnPulse(); setTimeout(_spawnPulse, 230); setTimeout(_spawnPulse, 460);
-
   } else if (roll < 0.46) {
-    // Core burst (existing)
     for (let i = 0; i < 4; i++) {
       setTimeout(() => _pulses.push({ r: 52, born: Date.now(), fast: true }), i * 115);
     }
-
   } else if (roll < 0.56) {
-    // Arc burst (existing)
     const s = State.get('orbState') || 'idle';
     for (let i = 0; i < 5; i++) _spawnEnergyArc(s === 'offline' ? 'idle' : s);
-
   } else if (roll < 0.64) {
-    // Ring recalibration (existing)
     _arcAngle1 += (Math.random() - 0.5) * 0.9;
     _arcAngle2 += (Math.random() - 0.5) * 0.9;
-
   } else if (roll < 0.68) {
-    // Core resonance (existing)
     _pulses.push({ r: 30, born: Date.now(), fast: false });
-
   } else if (roll < 0.76) {
-    // NEW Phase J-6: Outer ring recalibration — all rings shift simultaneously
+    // Outer ring recalibration
     for (const ring of _outerRings) {
       ring.targetGaps = _makeRingGaps(ring.segs, 0.05, 0.30);
       ring.targetLw   = ring.baseLw * (0.55 + Math.random() * 0.90);
     }
-
   } else if (roll < 0.86) {
-    // NEW Phase J-6: Deep scan — 3 staggered slow pulses from center
+    // Deep scan — staggered slow pulses
     for (let i = 0; i < 3; i++) {
       setTimeout(() => _pulses.push({ r: 28 + i * 40, born: Date.now(), fast: false }), i * 440);
     }
-
-  } else if (roll < 0.94) {
-    // NEW Phase J-6: Satellite burst — all satellites accelerate and glow
-    for (const s of _satellites) {
-      s.burstEnd  = Date.now() + 2400;
-      s.burstMul  = 4.0;
-      s.glowLevel = Math.min(1, s.glowLevel + 0.72);
-    }
-
+  } else if (roll < 0.93) {
+    // Network topology shift
+    _netFading  = true;
+    _nextNetEvt = Date.now() + _randMs(15000, 30000);
   } else {
-    // NEW Phase J-6: Network sync — data network flares then rebuilds
-    _netAlpha = Math.min(1, _netAlpha + 0.50);
-    _buildDataNetwork();
+    // Network illumination flash
+    _sigBoost  = Math.min(1, _sigBoost + 0.65);
+    _netAlpha  = Math.min(1, _netAlpha + 0.40);
   }
 }
 
@@ -1148,7 +1204,11 @@ function _updateGreeting() {
   if (!el) return;
   const h    = new Date().getHours();
   const name = State.get('userName');
-  const sal  = h < 5 ? 'WORKING LATE' : h < 12 ? 'GOOD MORNING' : h < 17 ? 'GOOD AFTERNOON' : h < 21 ? 'GOOD EVENING' : 'GOOD NIGHT';
+  const sal  = h < 5  ? 'WORKING LATE'
+             : h < 12 ? 'GOOD MORNING'
+             : h < 17 ? 'GOOD AFTERNOON'
+             : h < 21 ? 'GOOD EVENING'
+             :           'GOOD NIGHT';
   el.textContent = name ? `${sal}, ${name.toUpperCase()}` : sal;
 }
 

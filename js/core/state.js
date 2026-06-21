@@ -6,7 +6,7 @@
  */
 
 const _state = {
-  theme:        'ironman',
+  theme:        'gold',
   aiName:       'NOVA',
   userName:     '',
   orbState:     'idle',        // idle | listening | thinking | speaking | offline

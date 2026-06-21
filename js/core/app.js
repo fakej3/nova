@@ -27,6 +27,8 @@ import { renderMemoriesPanel }         from '../modules/memories-panel.js';
 import { renderTimeline }              from '../modules/timeline.js';
 import { initConversation, handleUserMessage, renderConversationPanel } from '../modules/conversation.js';
 import { initOnboarding }              from '../ui/onboarding.js';
+import { initStarfield }               from '../ui/starfield.js';
+import { initActivityFeed }            from '../ui/activity-feed.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -58,7 +60,9 @@ async function boot() {
     // 7. Start clock
     initClock();
 
-    // 8. Start particles
+    // 8. Start particles + starfield + activity feed
+    initStarfield();
+    initActivityFeed();
     initParticles();
 
     // 8b. Awareness system (before mouse and HUD so they can read it)

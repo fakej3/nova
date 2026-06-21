@@ -5,8 +5,8 @@
 
 #orb-container {
   position: relative;
-  width: clamp(220px, 22vw, 300px);
-  height: clamp(220px, 22vw, 300px);
+  width: clamp(200px, 22vw, 280px);
+  height: clamp(200px, 22vw, 280px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -87,8 +87,8 @@
 
 #orb {
   position: relative;
-  width: clamp(160px, 16vw, 220px);
-  height: clamp(160px, 16vw, 220px);
+  width: clamp(155px, 17vw, 220px);
+  height: clamp(155px, 17vw, 220px);
   border-radius: 50%;
   background:
     radial-gradient(
@@ -229,8 +229,8 @@
 }
 
 @keyframes glow-breathe {
-  0%, 100% { opacity: 0.52; transform: scale(1);    }
-  50%       { opacity: 0.78; transform: scale(1.08); }
+  0%, 100% { opacity: 0.36; transform: scale(1);    }
+  50%       { opacity: 0.55; transform: scale(1.06); }
 }
 
 @keyframes field-breathe {

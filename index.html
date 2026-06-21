@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="ironman">
+<html lang="en" data-theme="gold">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="NOVA — Personal AI Operating System" />
-  <meta name="theme-color" content="#0a0e1a" />
+  <meta name="description" content="NOVA — AI Operating System" />
+  <meta name="theme-color" content="#05070d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="NOVA" />
@@ -12,8 +12,7 @@
   <title>NOVA</title>
   <link rel="manifest" href="manifest.json" />
 
-  <!-- Favicon inline SVG -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230a0e1a'/><text y='72' x='50' text-anchor='middle' font-size='64' font-family='system-ui,sans-serif' font-weight='700' fill='%2300d4ff'>N</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2305070d'/><text y='72' x='50' text-anchor='middle' font-size='64' font-family='system-ui,sans-serif' font-weight='700' fill='%23c8922a'>N</text></svg>" />
 
   <link rel="stylesheet" href="css/core.css" />
   <link rel="stylesheet" href="css/themes.css" />
@@ -23,97 +22,215 @@
 </head>
 <body>
 
+  <!-- Deep space starfield — behind everything -->
+  <canvas id="starfield-canvas" aria-hidden="true"></canvas>
+
   <div id="app">
 
     <!-- Ambient particle layer -->
     <canvas id="particles-canvas" aria-hidden="true"></canvas>
 
-    <!-- Screen-level HUD overlay: corners, scan line, system bar, greeting -->
+    <!-- Corner frame brackets -->
     <div id="hud-overlay" aria-hidden="true">
       <div class="hud-corner corner-tl"></div>
       <div class="hud-corner corner-tr"></div>
       <div class="hud-corner corner-bl"></div>
       <div class="hud-corner corner-br"></div>
-      <div id="nova-greeting"></div>
-      <div id="system-bar">
-        <span id="sys-notes">0 NOTES</span>
-        <span class="sys-sep">·</span>
-        <span id="sys-tasks">0 PENDING</span>
-        <span class="sys-sep">·</span>
-        <span id="sys-uptime">UPTIME 0:00</span>
-      </div>
+      <div id="nova-greeting" style="display:none" aria-hidden="true"></div>
     </div>
 
-    <!-- Top bar -->
-    <header id="top-bar" aria-label="Status bar">
-      <div id="clock-display" aria-live="polite" aria-label="Current time">
-        <span id="clock-time">00:00:00</span>
-        <span id="clock-date">Loading...</span>
+    <!-- System top bar -->
+    <header id="top-bar" aria-label="System status">
+      <!-- LEFT: Clock + Date -->
+      <div id="top-clock">
+        <div id="clock-display" aria-live="polite" aria-label="Current time">
+          <span id="clock-time">00:00:00</span>
+          <span id="clock-date">Loading...</span>
+        </div>
       </div>
-      <div id="connectivity-dot" title="Connection status" aria-label="Connection status" role="status"></div>
+
+      <!-- CENTER: NOVA Brand -->
+      <div id="top-brand">
+        <span id="ai-name-display">NOVA</span>
+        <span class="brand-sub">AI OPERATING SYSTEM</span>
+      </div>
+
+      <!-- HIDDEN: kept for hud.js updateSystemBar() — not displayed -->
+      <div id="top-data" aria-hidden="true" style="display:none">
+        <span id="sys-notes">0</span>
+        <span id="sys-tasks">0</span>
+        <span id="sys-uptime">00:00</span>
+      </div>
+
+      <!-- RIGHT: Status indicators -->
+      <div id="top-right">
+        <div class="top-status-pair">
+          <div id="connectivity-dot" title="Connection status" aria-label="Connection status" role="status"></div>
+          <span class="top-status-label">ONLINE</span>
+        </div>
+        <div class="top-status-pair">
+          <div class="status-secure-dot"></div>
+          <span class="top-status-label">SECURE</span>
+        </div>
+        <div id="top-status">
+          <span class="status-dot"></span>
+          <span id="orb-status-text">INITIALIZING</span>
+        </div>
+      </div>
     </header>
 
-    <!-- Left nav dots -->
+    <!-- Left nav rail -->
     <nav id="nav-dots" aria-label="Navigation">
-      <button class="nav-dot active" data-view="home" title="Home" aria-label="Home view" aria-pressed="true">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <span class="nav-label">Home</span>
-      </button>
-      <button class="nav-dot" data-view="notes" title="Notes" aria-label="Notes view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-        <span class="nav-label">Notes</span>
-      </button>
-      <button class="nav-dot" data-view="tasks" title="Tasks" aria-label="Tasks view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-        <span class="nav-label">Tasks</span>
-      </button>
-      <button class="nav-dot" data-view="events" title="Timeline" aria-label="Activity timeline view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span class="nav-label">Timeline</span>
-      </button>
-      <button class="nav-dot" data-view="memories" title="Memories" aria-label="Memory center view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.5 8.5 23 9.5 17.5 14.5 19 22 12 18.5 5 22 6.5 14.5 1 9.5 8.5 8.5 12 2"/></svg>
-        <span class="nav-label">Memory</span>
-      </button>
-      <button class="nav-dot" data-view="search" title="Search (⌘K)" aria-label="Global search view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <span class="nav-label">Search</span>
-      </button>
-      <button class="nav-dot" data-view="chat" title="Conversation" aria-label="Conversation view" aria-pressed="false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        <span class="nav-label">Chat</span>
-      </button>
+      <div class="nav-logo" aria-hidden="true">N</div>
+      <div class="nav-items">
+        <button class="nav-dot active" data-view="home" title="Home" aria-label="Home view" aria-pressed="true">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">HOME</span>
+            <span class="nav-sublabel">Overview</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="notes" title="Notes" aria-label="Notes view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">NOTES</span>
+            <span class="nav-sublabel">Your thoughts</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="tasks" title="Tasks" aria-label="Tasks view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">TASKS</span>
+            <span class="nav-sublabel">To-do list</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="events" title="Timeline" aria-label="Activity timeline view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">TIMELINE</span>
+            <span class="nav-sublabel">Activity feed</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="memories" title="Memories" aria-label="Memory center view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.5 8.5 23 9.5 17.5 14.5 19 22 12 18.5 5 22 6.5 14.5 1 9.5 8.5 8.5 12 2"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">MEMORY</span>
+            <span class="nav-sublabel">Knowledge base</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="search" title="Search (⌘K)" aria-label="Global search view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">SEARCH</span>
+            <span class="nav-sublabel">Find anything</span>
+          </span>
+        </button>
+        <button class="nav-dot" data-view="chat" title="Conversation" aria-label="Conversation view" aria-pressed="false">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">CHAT</span>
+            <span class="nav-sublabel">Talk to NOVA</span>
+          </span>
+        </button>
+      </div>
+      <div class="nav-foot">
+        <button id="settings-btn" aria-label="Settings" title="System Settings">
+          <span class="nav-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </span>
+          <span class="nav-text">
+            <span class="nav-label">SETTINGS</span>
+            <span class="nav-sublabel">System config</span>
+          </span>
+        </button>
+      </div>
     </nav>
 
-    <!-- Right system data panel -->
-    <div id="sys-right" aria-hidden="true">
-      <div class="sysr-block">
-        <span class="sysr-label">STATE</span>
-        <span class="sysr-value" id="fui-orb-state">IDLE</span>
+    <!-- Left data column — Core Status / Memory / Tasks / Uptime -->
+    <aside id="left-data" aria-hidden="true">
+      <div class="ld-card" id="ld-core-status">
+        <div class="ld-card-header">
+          <span class="ld-card-icon">✦</span>
+          <span class="ld-card-title">CORE STATUS</span>
+        </div>
+        <div class="ld-card-body">
+          <span class="ld-status-value" id="fui-orb-state">IDLE</span>
+          <span class="ld-status-good">All systems operational</span>
+        </div>
       </div>
-      <div class="sysr-block">
-        <span class="sysr-label">TASKS</span>
-        <span class="sysr-value" id="fui-task-count">00</span>
-      </div>
-      <div class="sysr-block">
-        <span class="sysr-label">PENDING</span>
-        <span class="sysr-value" id="fui-pending-count">00</span>
-      </div>
-      <div class="sysr-block">
-        <span class="sysr-label">NOTES</span>
-        <span class="sysr-value" id="fui-note-count">00</span>
-      </div>
-      <div class="sysr-block">
-        <span class="sysr-label">UPTIME</span>
-        <span class="sysr-value" id="fui-uptime-val">00:00</span>
-      </div>
-    </div>
 
-    <!-- Main stage: orb -->
+      <div class="ld-card">
+        <div class="ld-card-header">
+          <span class="ld-card-icon">◈</span>
+          <span class="ld-card-title">MEMORY BANK</span>
+        </div>
+        <div class="ld-card-body">
+          <span class="ld-big-num" id="fui-note-count">00</span>
+          <span class="ld-big-sub">entries stored</span>
+        </div>
+      </div>
+
+      <div class="ld-card">
+        <div class="ld-card-header">
+          <span class="ld-card-icon">◉</span>
+          <span class="ld-card-title">TASKS</span>
+        </div>
+        <div class="ld-card-body ld-task-body">
+          <div class="ld-task-row">
+            <span class="ld-task-num" id="fui-pending-count">00</span>
+            <span class="ld-task-lbl">Pending</span>
+          </div>
+          <div class="ld-task-row">
+            <span class="ld-task-num" id="fui-task-count">00</span>
+            <span class="ld-task-lbl">Total</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ld-card ld-card--uptime">
+        <div class="ld-card-header">
+          <span class="ld-card-icon">◌</span>
+          <span class="ld-card-title">UPTIME</span>
+        </div>
+        <div class="ld-card-body">
+          <span class="ld-uptime" id="fui-uptime-val">00:00</span>
+          <span class="ld-big-sub">system uptime</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right activity feed -->
+    <aside id="sys-right" aria-hidden="true">
+      <div class="sysr-header">
+        <span>ACTIVITY FEED</span>
+        <span class="sysr-header-sub">Live system feed</span>
+      </div>
+      <div id="activity-feed-list">
+        <!-- Populated by activity-feed.js -->
+      </div>
+    </aside>
+
+    <!-- Main stage: orb + HUD canvas + status label -->
     <main id="main-stage" aria-label="NOVA interface">
-      <!-- Orbital HUD canvas — drawn around the orb each frame -->
       <canvas id="orb-hud-canvas" aria-hidden="true"></canvas>
-      <div id="orb-container" class="state-idle" aria-label="NOVA orb" role="img">
+      <div id="orb-container" class="state-idle" aria-label="NOVA intelligence core" role="img">
         <div id="orb-field"></div>
         <div id="orb-ring-3"></div>
         <div id="orb-glow-outer"></div>
@@ -127,10 +244,14 @@
           <div id="orb-shimmer"></div>
         </div>
       </div>
-
-      <div id="orb-label" aria-live="polite">
-        <span id="ai-name-display">NOVA</span>
-        <span id="orb-status-text">Online · Ready</span>
+      <!-- Status display below reactor -->
+      <div id="core-status-display" aria-live="polite" aria-label="System state">
+        <span id="orb-status-text">ONLINE · READY</span>
+      </div>
+      <!-- orb-label: kept hidden for any JS that may reference children -->
+      <div id="orb-label" style="display:none" aria-hidden="true">
+        <span>NOVA</span>
+        <span>Ready</span>
       </div>
     </main>
 
@@ -150,6 +271,7 @@
 
     <!-- Input bar -->
     <div id="input-bar" role="search" aria-label="NOVA input">
+      <div id="input-prefix" aria-hidden="true">›</div>
       <div id="input-wrapper">
         <input
           type="text"
@@ -163,7 +285,7 @@
           enterkeyhint="send"
         />
         <button id="send-btn" aria-label="Send message" title="Send">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
@@ -188,18 +310,9 @@
       </div>
     </div>
 
-    <!-- Install indicator — visible only when prompt is available -->
     <button id="install-indicator" hidden aria-label="Install NOVA" title="Install NOVA as a desktop app">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span>Install</span>
-    </button>
-
-    <!-- Settings panel trigger -->
-    <button id="settings-btn" aria-label="Settings" title="Settings">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="3"></circle>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-      </svg>
     </button>
 
     <!-- Settings modal -->
@@ -222,9 +335,13 @@
           <div class="settings-section">
             <label class="settings-label">Theme</label>
             <div id="theme-picker" class="theme-picker" role="radiogroup" aria-label="Select theme">
-              <button class="theme-option active" data-theme="ironman" role="radio" aria-checked="true">
+              <button class="theme-option active" data-theme="gold" role="radio" aria-checked="true">
+                <span class="theme-swatch gold-swatch"></span>
+                <span>Gold</span>
+              </button>
+              <button class="theme-option" data-theme="ironman" role="radio" aria-checked="false">
                 <span class="theme-swatch ironman-swatch"></span>
-                <span>Iron Man</span>
+                <span>Blue</span>
               </button>
               <button class="theme-option" data-theme="space" role="radio" aria-checked="false">
                 <span class="theme-swatch space-swatch"></span>
@@ -280,7 +397,7 @@
         <div class="onboarding-header">
           <div class="onboarding-logo" aria-hidden="true">◎</div>
           <h1 class="onboarding-title">NOVA</h1>
-          <p class="onboarding-subtitle">Your personal intelligence system</p>
+          <p class="onboarding-subtitle">Your personal AI operating system</p>
         </div>
         <ul class="onboarding-features" aria-label="Features">
           <li class="onboarding-feature">

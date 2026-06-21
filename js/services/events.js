@@ -20,6 +20,7 @@ export const EVENT_TYPES = {
   VIEW_CHANGED:     'view_changed',
   SETTINGS_UPDATED: 'settings_updated',
   MEMORY_CREATED:   'memory_created',
+  AI_RESPONDED:     'ai_responded',
 };
 
 /**

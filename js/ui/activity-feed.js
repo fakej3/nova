@@ -62,7 +62,9 @@ export function initActivityFeed() {
   Bus.on(EVENTS.TASK_UPDATED,   (d) => _addEntry('TASK',   'Task updated',     d?.title || ''));
   Bus.on(EVENTS.TASK_COMPLETED, (d) => _addEntry('TASK',   'Task completed',   d?.title || ''));
   Bus.on(EVENTS.MEMORY_CREATED, ()  => _addEntry('MEM',    'Memory stored',    'New context saved'));
-  Bus.on(EVENTS.ONLINE,         ()  => _addEntry('ONLINE', 'Connection online','Network restored'));
-  Bus.on(EVENTS.OFFLINE,        ()  => _addEntry('SYSTEM', 'Connection lost',  'Local mode active'));
-  Bus.on(EVENTS.APP_READY,      ()  => _addEntry('SYSTEM', 'System ready',     'NOVA initialized'));
+  Bus.on(EVENTS.ONLINE,                ()  => _addEntry('ONLINE',  'Connection online', 'Network restored'));
+  Bus.on(EVENTS.OFFLINE,               ()  => _addEntry('SYSTEM',  'Connection lost',   'Local mode active'));
+  Bus.on(EVENTS.APP_READY,             ()  => _addEntry('SYSTEM',  'System ready',      'NOVA initialized'));
+  Bus.on(EVENTS.CHAT_MESSAGE_SENT,     (d) => _addEntry('CHAT',    'Message sent',      d?.preview || ''));
+  Bus.on(EVENTS.AI_RESPONSE_RECEIVED,  (d) => _addEntry('SYSTEM',  'AI responded',      d?.preview || ''));
 }

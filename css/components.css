@@ -666,6 +666,51 @@
   box-shadow: 0 0 0 3px rgba(var(--orb-color-rgb), 0.1);
 }
 
+.settings-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}
+
+.settings-hint strong {
+  color: rgba(var(--orb-color-rgb), 0.60);
+}
+
+/* ── Mic button ─────────────────────────────────────────────── */
+
+#mic-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(var(--orb-color-rgb), 0.40);
+  background: transparent;
+  border: none;
+  border-left: 1px solid rgba(var(--orb-color-rgb), 0.09);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+#mic-btn:hover {
+  color: var(--accent-primary);
+  background: rgba(var(--orb-color-rgb), 0.06);
+}
+
+#mic-btn.mic-active {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
 .theme-picker {
   display: grid;
   grid-template-columns: 1fr 1fr;

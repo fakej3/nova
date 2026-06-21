@@ -75,4 +75,8 @@ export const EVENTS = {
   // Orb touch interactions
   ORB_TAPPED:     'orb:tapped',
   ORB_LONG_PRESS: 'orb:long_press',
+
+  // Chat / AI
+  CHAT_MESSAGE_SENT:    'chat:message_sent',
+  AI_RESPONSE_RECEIVED: 'chat:response_received',
 };

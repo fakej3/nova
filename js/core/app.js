@@ -25,7 +25,8 @@ import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
 import { renderSearchPanel }           from '../modules/search-panel.js';
 import { renderMemoriesPanel }         from '../modules/memories-panel.js';
 import { renderTimeline }              from '../modules/timeline.js';
-import { initConversation, handleUserMessage, renderConversationPanel } from '../modules/conversation.js';
+import { initConversation, handleUserMessage, renderConversationPanel, isBusy } from '../modules/conversation.js';
+import { setGeminiKey, getGeminiKey } from '../services/gemini.js';
 import { initOnboarding }              from '../ui/onboarding.js';
 import { initStarfield }               from '../ui/starfield.js';
 import { initActivityFeed }            from '../ui/activity-feed.js';
@@ -89,6 +90,7 @@ async function boot() {
     _wireSwitchViewRequest();
     _wireGestures();
     _wireInputKeyboard();
+    _wireMicButton();
 
     // Refresh timeline if open when a new event is logged
     Bus.on(EVENTS.EVENT_LOGGED, () => {
@@ -134,13 +136,15 @@ async function boot() {
 // ── Settings loader ───────────────────────────────────────────
 
 async function _loadSettings() {
-  const aiName   = await DB.settings.get('aiName');
-  const userName = await DB.settings.get('userName');
+  const aiName    = await DB.settings.get('aiName');
+  const userName  = await DB.settings.get('userName');
   const autoTheme = await DB.settings.get('autoTheme');
+  const geminiKey = await DB.settings.get('geminiApiKey');
 
-  if (aiName)   State.set('aiName',    aiName);
-  if (userName) State.set('userName',  userName);
+  if (aiName)    State.set('aiName',   aiName);
+  if (userName)  State.set('userName', userName);
   if (autoTheme !== null) State.set('autoTheme', autoTheme);
+  if (geminiKey) setGeminiKey(geminiKey);
 }
 
 // ── Navigation ────────────────────────────────────────────────
@@ -310,6 +314,8 @@ function _wireInputBar() {
     const value = input?.value.trim();
     if (!value) return;
     input.value = '';
+    // Reset to idle if we were in listening state from typing
+    if (State.get('orbState') === 'listening') setOrbState('idle');
     handleUserMessage(value);
   };
 
@@ -318,6 +324,21 @@ function _wireInputBar() {
       e.preventDefault();
       handleSubmit();
     }
+  });
+
+  // Typing → orb enters listening state
+  input?.addEventListener('input', () => {
+    if (isBusy()) return;
+    const orbState = State.get('orbState');
+    if (input.value.trim()) {
+      if (orbState === 'idle' || orbState === 'success') setOrbState('listening');
+    } else {
+      if (orbState === 'listening') setOrbState('idle');
+    }
+  });
+
+  input?.addEventListener('blur', () => {
+    if (State.get('orbState') === 'listening' && !isBusy()) setOrbState('idle');
   });
 
   sendBtn?.addEventListener('click', handleSubmit);
@@ -356,10 +377,12 @@ function _openSettings() {
   const aiInput    = document.getElementById('setting-ai-name');
   const userInput  = document.getElementById('setting-user-name');
   const autoToggle = document.getElementById('setting-auto-theme');
+  const keyInput   = document.getElementById('setting-gemini-key');
 
   if (aiInput)    aiInput.value      = State.get('aiName')    ?? 'NOVA';
   if (userInput)  userInput.value    = State.get('userName')  ?? '';
   if (autoToggle) autoToggle.checked = State.get('autoTheme') ?? false;
+  if (keyInput)   keyInput.value     = getGeminiKey();
 
   renderInstallSection();
   renderDiagnosticsPanel();
@@ -374,17 +397,20 @@ function _closeSettings() {
 }
 
 async function _saveSettings() {
-  const aiName    = document.getElementById('setting-ai-name')?.value.trim()   || 'NOVA';
-  const userName  = document.getElementById('setting-user-name')?.value.trim() || '';
-  const autoTheme = document.getElementById('setting-auto-theme')?.checked     ?? false;
+  const aiName    = document.getElementById('setting-ai-name')?.value.trim()    || 'NOVA';
+  const userName  = document.getElementById('setting-user-name')?.value.trim()  || '';
+  const autoTheme = document.getElementById('setting-auto-theme')?.checked      ?? false;
+  const geminiKey = document.getElementById('setting-gemini-key')?.value.trim() || '';
 
   State.set('aiName',    aiName);
   State.set('userName',  userName);
   State.set('autoTheme', autoTheme);
+  setGeminiKey(geminiKey);
 
-  await DB.settings.set('aiName',    aiName);
-  await DB.settings.set('userName',  userName);
-  await DB.settings.set('autoTheme', autoTheme);
+  await DB.settings.set('aiName',       aiName);
+  await DB.settings.set('userName',     userName);
+  await DB.settings.set('autoTheme',    autoTheme);
+  await DB.settings.set('geminiApiKey', geminiKey);
 
   setAutoTheme(autoTheme);
   _updateAiNameDisplay();
@@ -480,6 +506,56 @@ function _wireGestures() {
       if (State.get('panelOpen')) _closePanel();
     }
   }, { passive: true });
+}
+
+// ── Mic button / Voice input ──────────────────────────────────
+
+function _wireMicButton() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = document.getElementById('mic-btn');
+  if (!SpeechRecognition || !micBtn) return;
+
+  micBtn.hidden = false; // show only when API is available
+
+  let _rec       = null;
+  let _listening = false;
+
+  micBtn.addEventListener('click', () => {
+    if (_listening) {
+      _rec?.stop();
+      return;
+    }
+
+    _rec = new SpeechRecognition();
+    _rec.continuous      = false;
+    _rec.interimResults  = false;
+    _rec.lang            = 'en-US';
+    _rec.maxAlternatives = 1;
+
+    _rec.onstart = () => {
+      _listening = true;
+      micBtn.classList.add('mic-active');
+      setOrbState('listening');
+    };
+
+    _rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript.trim();
+      if (transcript) handleUserMessage(transcript);
+    };
+
+    _rec.onerror = (e) => {
+      console.warn('[Mic]', e.error);
+      if (e.error !== 'no-speech') showToast('Microphone error: ' + e.error, 'error', 3000);
+    };
+
+    _rec.onend = () => {
+      _listening = false;
+      micBtn.classList.remove('mic-active');
+      if (State.get('orbState') === 'listening' && !isBusy()) setOrbState('idle');
+    };
+
+    _rec.start();
+  });
 }
 
 // ── Mobile keyboard — keep input bar above keyboard ───────────

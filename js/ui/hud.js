@@ -57,6 +57,10 @@ const R_ACT    = 100;   // activity ring (state behavior)
 const R_SCANNER   = 140;   // scanner sweeps just outside glass
 const R_PULSE_END = 260;
 
+const R_BASE    = 114;   // structural ring just outside orb glass
+const R_TICKS   = 152;   // tick/measurement ring
+const R_OUTER   = 196;   // outer rotating structural ring
+
 // ── Scanner speed & alpha per state ──────────────────────────
 
 const SCAN_PARAMS = {
@@ -123,6 +127,10 @@ let _mouseNX  = 0;
 let _mouseNY  = 0;
 let _hoverDist = 0;
 let _hoverZone = 0;  // 0=none, 1=inner, 2=mid, 3=outer
+
+let _outerAng  = Math.random() * TWO_PI;  // outer ring rotation
+let _baseAng   = Math.random() * TWO_PI;  // base ring rotation
+let _cascadeP  = 0;                        // tick cascade progress (for thinking state)
 
 // Idle curiosity
 let _curiosityAt     = Date.now() + _randMs(45000, 90000);
@@ -290,19 +298,29 @@ function _loop() {
   _checkIdlePulse();
   _checkCuriosity(state);
 
+  _outerAng  += -0.00038 * _awIdleMul * _awTimeMod;
+  _baseAng   +=  0.00022 * _awIdleMul * _awTimeMod;
+  _cascadeP  += (state === 'thinking' ? 0.0042 : 0.0008) * _awTimeMod;
+
   _ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
   // Focus: outer dims
   const outerDim = 1 - _focusFade * 0.70;
 
+  _drawBaseRing(state, outerDim);
   _drawMouseGlow();
   _drawAbsorptions();
   _drawMemoryRing(outerDim);
   _drawTaskRing(outerDim);
   _drawActivityRing(outerDim, state);
+  _drawTickRing(state, outerDim);
   _drawScanner(outerDim);
+  _drawOuterRing(state, outerDim);
+  _drawCornerIndicators(state, outerDim);
+  _drawCardinalAnchors(state, outerDim);
   _drawFlowPulses();
   _drawPulses();
+  _updateFuiPanel();
 
   requestAnimationFrame(_loop);
 }
@@ -596,6 +614,266 @@ function _drawScanner(outerDim) {
   _ctx.fillStyle = sg;
   _ctx.fill();
   _ctx.restore();
+}
+
+// ── Base structural ring (R=114) ──────────────────────────────
+// Tight segmented ring just outside the orb glass.
+// 6 asymmetric segments with slow CW rotation.
+
+const _BASE_GAPS = [0.062, 0.038, 0.055, 0.042, 0.048, 0.035];
+
+function _drawBaseRing(state, outerDim) {
+  const SEGS     = 6;
+  const totalGap = _BASE_GAPS.reduce((s, g) => s + g, 0);
+  const segFrac  = (1 - totalGap) / SEGS;
+
+  const stateA = state === 'thinking'   ? 0.52
+               : state === 'responding' ? 0.42
+               : state === 'listening'  ? 0.32
+               : state === 'idle'       ? 0.18 : 0.10;
+
+  const alpha = stateA * _awTimeMod * outerDim;
+  if (alpha < 0.008) return;
+
+  _ctx.save();
+  _ctx.lineCap = 'round';
+  let cursor = _baseAng;
+
+  for (let i = 0; i < SEGS; i++) {
+    const segSpan = segFrac * TWO_PI;
+    const gapSpan = _BASE_GAPS[i] * TWO_PI;
+
+    _ctx.beginPath();
+    _ctx.arc(CX, CY, R_BASE, cursor, cursor + segSpan);
+    _ctx.strokeStyle = _rgba(alpha * 0.30);
+    _ctx.lineWidth   = 3.5;
+    _ctx.stroke();
+
+    _ctx.beginPath();
+    _ctx.arc(CX, CY, R_BASE, cursor, cursor + segSpan);
+    _ctx.strokeStyle = _rgba(alpha);
+    _ctx.lineWidth   = 0.9;
+    _ctx.stroke();
+
+    const ex = CX + Math.cos(cursor + segSpan) * R_BASE;
+    const ey = CY + Math.sin(cursor + segSpan) * R_BASE;
+    _ctx.beginPath();
+    _ctx.arc(ex, ey, 1.5, 0, TWO_PI);
+    _ctx.fillStyle = _rgba(Math.min(1, alpha * 2.2));
+    _ctx.fill();
+
+    cursor += segSpan + gapSpan;
+  }
+  _ctx.restore();
+}
+
+// ── Tick/measurement ring (R=152) ─────────────────────────────
+// 72 tick marks — minor, medium, major, cardinal.
+// Creates instrumentation depth. Cascade sweep during thinking.
+
+function _drawTickRing(state, outerDim) {
+  const COUNT  = 72;
+  const eMod   = state === 'thinking'   ? 1.65
+               : state === 'responding' ? 1.30
+               : state === 'listening'  ? 1.15 : 1.0;
+
+  _ctx.save();
+  _ctx.lineCap = 'butt';
+
+  for (let i = 0; i < COUNT; i++) {
+    const ang     = (i / COUNT) * TWO_PI - HALF_PI;
+    const isCard  = (i % 18 === 0);
+    const isMaj   = (i %  6 === 0);
+    const isMed   = (i %  3 === 0);
+
+    const len       = isCard ? 9 : isMaj ? 6 : isMed ? 3.5 : 1.8;
+    const baseAlpha = isCard ? 0.52 : isMaj ? 0.28 : isMed ? 0.14 : 0.07;
+
+    // Cascade: sweeping lit band during thinking
+    const normPos = i / COUNT;
+    const cascade = _cascadeP % 1;
+    const dist    = Math.min(Math.abs(normPos - cascade), 1 - Math.abs(normPos - cascade));
+    const cascB   = state === 'thinking' ? Math.max(0, 1 - dist * 14) * 0.38 : 0;
+
+    const alpha = (baseAlpha * eMod + cascB) * _awTimeMod * outerDim;
+    if (alpha < 0.005) continue;
+
+    _ctx.beginPath();
+    _ctx.moveTo(CX + Math.cos(ang) * R_TICKS,         CY + Math.sin(ang) * R_TICKS);
+    _ctx.lineTo(CX + Math.cos(ang) * (R_TICKS + len), CY + Math.sin(ang) * (R_TICKS + len));
+    _ctx.strokeStyle = _rgba(alpha);
+    _ctx.lineWidth   = isCard ? 1.4 : isMaj ? 1.0 : 0.7;
+    _ctx.stroke();
+  }
+  _ctx.restore();
+}
+
+// ── Outer structural ring (R=196) ─────────────────────────────
+// 3 asymmetric segments, slow CCW rotation.
+// Outermost boundary of the visual system.
+
+const _OUTER_GAPS = [0.080, 0.048, 0.064];
+
+function _drawOuterRing(state, outerDim) {
+  const SEGS     = 3;
+  const totalGap = _OUTER_GAPS.reduce((s, g) => s + g, 0);
+  const segFrac  = (1 - totalGap) / SEGS;
+
+  const stateA = state === 'thinking'   ? 0.46
+               : state === 'responding' ? 0.36
+               : state === 'listening'  ? 0.24
+               : state === 'idle'       ? 0.14 : 0.08;
+
+  const alpha = stateA * _awTimeMod * outerDim;
+  if (alpha < 0.008) return;
+
+  _ctx.save();
+  _ctx.lineCap = 'round';
+  let cursor = _outerAng;
+
+  for (let i = 0; i < SEGS; i++) {
+    const segSpan = segFrac * TWO_PI;
+    const gapSpan = _OUTER_GAPS[i] * TWO_PI;
+
+    _ctx.beginPath();
+    _ctx.arc(CX, CY, R_OUTER, cursor, cursor + segSpan);
+    _ctx.strokeStyle = _rgba(alpha * 0.22);
+    _ctx.lineWidth   = 4.5;
+    _ctx.stroke();
+
+    _ctx.beginPath();
+    _ctx.arc(CX, CY, R_OUTER, cursor, cursor + segSpan);
+    _ctx.strokeStyle = _rgba(alpha);
+    _ctx.lineWidth   = 0.85;
+    _ctx.stroke();
+
+    const ex = CX + Math.cos(cursor + segSpan) * R_OUTER;
+    const ey = CY + Math.sin(cursor + segSpan) * R_OUTER;
+    _ctx.beginPath();
+    _ctx.arc(ex, ey, 1.5, 0, TWO_PI);
+    _ctx.fillStyle = _rgba(Math.min(1, alpha * 2.4));
+    _ctx.fill();
+
+    cursor += segSpan + gapSpan;
+  }
+  _ctx.restore();
+}
+
+// ── Corner targeting indicators ───────────────────────────────
+// 4 inward L-brackets at diagonal extremes + faint crosshair lines.
+
+function _drawCornerIndicators(state, outerDim) {
+  const stateA = state === 'thinking'   ? 0.52
+               : state === 'responding' ? 0.38
+               : state === 'listening'  ? 0.26
+               : state === 'idle'       ? 0.18 : 0.08;
+
+  const alpha = stateA * _awTimeMod * outerDim;
+  if (alpha < 0.006) return;
+
+  const DIST = 182;
+  const ARM  = 14;
+  const OFF  = DIST * 0.7071;
+
+  const dirs = [[-1,-1],[1,-1],[-1,1],[1,1]];
+
+  _ctx.save();
+  _ctx.lineCap = 'square';
+  _ctx.lineWidth = 0.9;
+  _ctx.strokeStyle = _rgba(alpha);
+
+  for (const [sx, sy] of dirs) {
+    const bx = CX + sx * OFF;
+    const by = CY + sy * OFF;
+    _ctx.beginPath();
+    _ctx.moveTo(bx + sx * ARM, by);
+    _ctx.lineTo(bx, by);
+    _ctx.lineTo(bx, by + sy * ARM);
+    _ctx.stroke();
+    _ctx.beginPath();
+    _ctx.arc(bx, by, 1.5, 0, TWO_PI);
+    _ctx.fillStyle = _rgba(Math.min(1, alpha * 1.8));
+    _ctx.fill();
+  }
+
+  // Faint crosshair
+  _ctx.strokeStyle = _rgba(alpha * 0.10);
+  _ctx.lineWidth = 0.5;
+  _ctx.beginPath();
+  _ctx.moveTo(CX - OFF, CY); _ctx.lineTo(CX + OFF, CY);
+  _ctx.stroke();
+  _ctx.beginPath();
+  _ctx.moveTo(CX, CY - OFF); _ctx.lineTo(CX, CY + OFF);
+  _ctx.stroke();
+
+  _ctx.restore();
+}
+
+// ── Cardinal data anchors ─────────────────────────────────────
+// N/E/S/W data labels integrated into the ring system.
+// Desktop only.
+
+function _drawCardinalAnchors(state, outerDim) {
+  if (_isMobile) return;
+  const alpha = 0.30 * _awTimeMod * outerDim;
+  if (alpha < 0.01) return;
+
+  const R_ANCHOR = 222;
+  const orbState = (State.get('orbState') || 'idle').toUpperCase();
+
+  _drawAnchorLabel(CX, CY - R_ANCHOR, orbState,                        'SYSTEM', 'center', alpha,  0, -1);
+  _drawAnchorLabel(CX + R_ANCHOR, CY, String(_taskPending).padStart(2,'0'), 'TASKS', 'left',   alpha,  1,  0);
+  _drawAnchorLabel(CX, CY + R_ANCHOR, String(_noteCount).padStart(2,'0'),   'NOTES', 'center', alpha,  0,  1);
+  _drawAnchorLabel(CX - R_ANCHOR, CY, _getUptimeLabel(),                    'UPTIME','right',  alpha, -1,  0);
+}
+
+function _drawAnchorLabel(x, y, value, label, align, alpha, nx, ny) {
+  _ctx.save();
+
+  // Connector line from outer ring
+  _ctx.beginPath();
+  _ctx.moveTo(CX + nx * (R_OUTER + 2),  CY + ny * (R_OUTER + 2));
+  _ctx.lineTo(CX + nx * (R_OUTER + 20), CY + ny * (R_OUTER + 20));
+  _ctx.strokeStyle = _rgba(alpha * 0.35);
+  _ctx.lineWidth   = 0.7;
+  _ctx.stroke();
+
+  _ctx.textAlign    = align;
+  _ctx.textBaseline = 'middle';
+
+  _ctx.font      = 'bold 11px "SF Mono","Courier New",monospace';
+  _ctx.fillStyle = _rgba(alpha * 0.90);
+  _ctx.fillText(value, x, y - 7);
+
+  _ctx.font      = '500 8px "SF Mono","Courier New",monospace';
+  _ctx.fillStyle = _rgba(alpha * 0.42);
+  _ctx.fillText(label, x, y + 7);
+
+  _ctx.restore();
+}
+
+// ── FUI DOM panel update ──────────────────────────────────────
+// Sync the right-side data panel and state indicator with live data.
+
+function _updateFuiPanel() {
+  const state = State.get('orbState') || 'idle';
+  const el = (id) => document.getElementById(id);
+  const fmt = (n) => String(n).padStart(2, '0');
+
+  const stateEl = el('fui-orb-state');
+  if (stateEl) stateEl.textContent = state.toUpperCase();
+
+  const notesEl = el('fui-note-count');
+  if (notesEl) notesEl.textContent = fmt(_noteCount);
+
+  const tasksEl = el('fui-task-count');
+  if (tasksEl) tasksEl.textContent = fmt(_taskTotal);
+
+  const pendEl = el('fui-pending-count');
+  if (pendEl) pendEl.textContent = fmt(_taskPending);
+
+  const uptEl = el('fui-uptime-val');
+  if (uptEl) uptEl.textContent = _getUptimeLabel();
 }
 
 // ── Flow pulses (responding state) ───────────────────────────

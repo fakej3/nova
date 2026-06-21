@@ -85,6 +85,30 @@
       </button>
     </nav>
 
+    <!-- Right system data panel -->
+    <div id="sys-right" aria-hidden="true">
+      <div class="sysr-block">
+        <span class="sysr-label">STATE</span>
+        <span class="sysr-value" id="fui-orb-state">IDLE</span>
+      </div>
+      <div class="sysr-block">
+        <span class="sysr-label">TASKS</span>
+        <span class="sysr-value" id="fui-task-count">00</span>
+      </div>
+      <div class="sysr-block">
+        <span class="sysr-label">PENDING</span>
+        <span class="sysr-value" id="fui-pending-count">00</span>
+      </div>
+      <div class="sysr-block">
+        <span class="sysr-label">NOTES</span>
+        <span class="sysr-value" id="fui-note-count">00</span>
+      </div>
+      <div class="sysr-block">
+        <span class="sysr-label">UPTIME</span>
+        <span class="sysr-value" id="fui-uptime-val">00:00</span>
+      </div>
+    </div>
+
     <!-- Main stage: orb -->
     <main id="main-stage" aria-label="NOVA interface">
       <!-- Orbital HUD canvas — drawn around the orb each frame -->

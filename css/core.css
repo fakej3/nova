@@ -1166,6 +1166,114 @@ input, textarea, select {
   .onboarding-logo  { font-size: 28px; }
 }
 
+/* ── Right data panel ────────────────────────────────────────── */
+
+#sys-right {
+  position: fixed;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  animation: sysbar-in 1.2s ease forwards;
+  animation-delay: 1.8s;
+}
+
+.sysr-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-end;
+  padding-right: 10px;
+  border-right: 1px solid rgba(var(--orb-color-rgb), 0.18);
+}
+
+.sysr-label {
+  font-family: 'SF Mono', 'Courier New', monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(var(--orb-color-rgb), 0.36);
+}
+
+.sysr-value {
+  font-family: 'SF Mono', 'Courier New', monospace;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: rgba(var(--orb-color-rgb), 0.68);
+}
+
+/* Hide right panel on narrow screens */
+@media (max-width: 900px) {
+  #sys-right { display: none; }
+}
+
+/* ── Enhanced corner brackets ────────────────────────────────── */
+
+.hud-corner {
+  opacity: 0.32;
+  width: 32px;
+  height: 32px;
+}
+
+.hud-corner::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+}
+
+.corner-tl::after {
+  top: 8px; left: 8px;
+  border-top: 1px solid var(--accent-primary);
+  border-left: 1px solid var(--accent-primary);
+  opacity: 0.45;
+}
+
+.corner-tr::after {
+  top: 8px; right: 8px;
+  border-top: 1px solid var(--accent-primary);
+  border-right: 1px solid var(--accent-primary);
+  opacity: 0.45;
+}
+
+.corner-bl::after {
+  bottom: 8px; left: 8px;
+  border-bottom: 1px solid var(--accent-primary);
+  border-left: 1px solid var(--accent-primary);
+  opacity: 0.45;
+}
+
+.corner-br::after {
+  bottom: 8px; right: 8px;
+  border-bottom: 1px solid var(--accent-primary);
+  border-right: 1px solid var(--accent-primary);
+  opacity: 0.45;
+}
+
+/* ── Nav connection beam ─────────────────────────────────────── */
+
+.nav-dot.active::after {
+  content: '';
+  position: absolute;
+  right: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 1px;
+  background: linear-gradient(to right, rgba(var(--orb-color-rgb), 0.5), transparent);
+}
+
+@media (max-width: 640px) {
+  .nav-dot.active::after { display: none; }
+}
+
 /* ============================================================
    Touch — usability and interaction quality
    ============================================================ */

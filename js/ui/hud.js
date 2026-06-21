@@ -551,8 +551,9 @@ function _drawActivityRing(outerDim, state) {
 // toward where the cursor is. The orb "looks" at the user.
 
 function _drawScanner(outerDim) {
-  const hBoost = _hoverZone >= 2 ? 1.35 : 1;
-  const sa     = _scanAlpha * _awTimeMod * _awIdleMul * outerDim * hBoost;
+  const hBoost        = _hoverZone >= 2 ? 1.35 : 1;
+  const curiosityBoost = (_curiosityActive && _curiosityType === 1) ? 2.2 : 1.0;
+  const sa     = _scanAlpha * _awTimeMod * _awIdleMul * outerDim * hBoost * curiosityBoost;
   if (sa < 0.005) return;
   const ex = CX + Math.cos(_scanAngle) * R_SCANNER;
   const ey = CY + Math.sin(_scanAngle) * R_SCANNER;
@@ -614,8 +615,8 @@ function _drawFlowPulses() {
 
 // ── Pulse rings (events + idle) ───────────────────────────────
 
-function _spawnPulse(r) {
-  _pulses.push({ r: r ?? 108, born: Date.now() });
+function _spawnPulse(r, bright) {
+  _pulses.push({ r: r ?? 108, born: Date.now(), bright: !!bright });
 }
 
 function _checkIdlePulse() {
@@ -633,12 +634,12 @@ function _drawPulses() {
     if (age > 2600) { _pulses.splice(i, 1); continue; }
     const t     = age / 2600;
     const r     = p.r + (R_PULSE_END - p.r) * _easeOut(t);
-    const alpha = (1 - t) * 0.36 * _awTimeMod;
+    const alpha = (1 - t) * (p.bright ? 0.82 : 0.36) * _awTimeMod;
     _ctx.save();
     _ctx.beginPath();
     _ctx.arc(CX, CY, r, 0, TWO_PI);
     _ctx.strokeStyle = _rgba(alpha);
-    _ctx.lineWidth   = 0.85;
+    _ctx.lineWidth   = p.bright ? 1.2 : 0.85;
     _ctx.stroke();
     _ctx.restore();
   }
@@ -672,17 +673,19 @@ function _checkCuriosity(state) {
 
   if (_curiosityType === 0) {
     // Reconfiguration: internal pulse from core outward
-    _spawnPulse(30);
-    setTimeout(() => _spawnPulse(55), 350);
+    _spawnPulse(30, true);
+    setTimeout(() => _spawnPulse(55, true), 350);
+    setTimeout(() => _spawnPulse(30, true), 700);
     _curiosityDur = 6000;
   } else if (_curiosityType === 1) {
-    // Scanner override: reverse direction for ~3.5 seconds
+    // Scanner override: reverse direction for ~3.5 seconds (scanner alpha boosted in _drawScanner)
     _curiosityDur = 3500;
   } else {
     // Deep scan: concentric pulses from inside out
-    _spawnPulse(30);
-    setTimeout(() => _spawnPulse(55), 280);
-    setTimeout(() => _spawnPulse(85), 560);
+    _spawnPulse(30, true);
+    setTimeout(() => _spawnPulse(55, true), 280);
+    setTimeout(() => _spawnPulse(85, true), 560);
+    setTimeout(() => _spawnPulse(108, true), 840);
     _curiosityDur = 2200;
   }
 }

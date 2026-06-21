@@ -38,7 +38,7 @@ const TWO_PI = Math.PI * 2;
 // Energy baseline per orb state.
 // These are MINIMUM energy floors — even at idle the reactor glows.
 const STATE_ENERGY = {
-  idle:       0.18,
+  idle:       0.26,
   listening:  0.58,
   thinking:   0.96,
   responding: 0.80,
@@ -49,7 +49,7 @@ const STATE_ENERGY = {
 
 // Radius expressed as fraction of canvas logical width (w).
 // The orb circle radius = w * 0.50, so anything < 0.50 stays inside.
-const R_NUC_PT   = 0.042;  // nucleus hard point
+const R_NUC_PT   = 0.058;  // nucleus hard point
 const R_NUC_IG   = 0.130;  // inner colored glow
 const R_NUC_HZ   = 0.290;  // nuclear haze (fills inner half of orb)
 const R_INNER    = 0.165;  // inner reactor ring (segmented)
@@ -87,6 +87,16 @@ export function setReactorCursor(nx, ny) {
 let _gA0 = Math.random() * TWO_PI;   // inner (fast CW)
 let _gA1 = Math.random() * TWO_PI;   // mid (slow CCW)
 let _gA2 = Math.random() * TWO_PI;   // outer (very slow CCW)
+
+// Arc fragments — 3 drifting arcs, evidence of internal life
+const _arcFrags = Array.from({ length: 3 }, (_, i) => ({
+  ang:  Math.random() * TWO_PI,
+  span: 0.30 + Math.random() * 0.35,
+  r:    [0.192, 0.248, 0.278][i] + (Math.random() - 0.5) * 0.018,
+  vel:  (i % 2 === 0 ? 1 : -1) * (0.00024 + Math.random() * 0.00016),
+  base: 0.026 + Math.random() * 0.006,
+  ph:   Math.random() * TWO_PI,
+}));
 
 // Containment ring angle
 let _contAng = Math.random() * TWO_PI;
@@ -589,6 +599,15 @@ function _hot(a) {
   return `rgba(${rh},${gh},${bh},${_clamp(a).toFixed(3)})`;
 }
 
+// Cool-shifted version: slightly cooler hue for outer atmosphere
+function _cool(a) {
+  const [r, g, b] = _colorRgb.split(',').map(Number);
+  const rc = Math.round(r * 0.86);
+  const gc = Math.round(g * 0.95);
+  const bc = Math.min(255, Math.round(b + (255 - b) * 0.14));
+  return `rgba(${rc},${gc},${bc},${_clamp(a).toFixed(3)})`;
+}
+
 function _clamp(a) { return Math.max(0, Math.min(1, a)); }
 
 // ─────────────────────────────────────────────────────────────
@@ -658,6 +677,7 @@ function _loop() {
   _gA2       += -0.00042 * spd;            // outer ring CCW (extremely slow)
   _contAng   += -0.00072 * spd;            // containment ring CCW
   _innerAng  +=  0.0018  * spd * tBoost;   // energy streams rotation
+  for (const f of _arcFrags) f.ang += f.vel * spd;  // arc fragment drift
 
   // Multi-freq sine waves for organic variation
   const s1 = Math.sin(_t * 0.026);
@@ -675,9 +695,9 @@ function _loop() {
   {
     const a = (0.085 + _energy * 0.065 + s1 * 0.012) * timeMod;
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * R_ATM);
-    g.addColorStop(0,    _c(a * 3.2));
+    g.addColorStop(0,    _hot(a * 3.2));
     g.addColorStop(0.22, _c(a * 1.8));
-    g.addColorStop(0.55, _c(a * 0.7));
+    g.addColorStop(0.55, _cool(a * 0.7));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
     _ctx.fillRect(0, 0, w, h);
@@ -759,6 +779,12 @@ function _loop() {
   // ═══════════════════════════════════════════════════════════════
   _updateNet(cx, cy, w, state, spd);
   _drawNet(cx, cy, w, state, timeMod);
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 3.5 — Arc fragments  (3 drifting arcs, organic internal life)
+  // Barely visible at idle — evidence of process, not decoration.
+  // ═══════════════════════════════════════════════════════════════
+  _drawArcFrags(cx, cy, w, timeMod);
 
   // ═══════════════════════════════════════════════════════════════
   // LAYER 4 — Inner geometry ring  (R_INNER, fast CW, 4 segments)
@@ -869,7 +895,7 @@ function _loop() {
     const nucScale = 1 - _thinkP * 0.25;
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const igR = w * R_NUC_IG * nucScale * (1 + s1 * 0.08);
-    const igA = (0.26 + _energy * 0.20 + surgeNuc * 0.16) * timeMod;
+    const igA = (0.34 + _energy * 0.22 + surgeNuc * 0.16) * timeMod;
 
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, igR);
     g.addColorStop(0,    _hot(igA));
@@ -897,7 +923,7 @@ function _loop() {
 
     // Outer ring of the nucleus
     const ringR = w * R_NUC_PT * nucScale * (1.8 + pulse * 0.25);
-    const ringA = (0.70 + _energy * 0.22 + surgeNuc * 0.20) * timeMod;
+    const ringA = (0.86 + _energy * 0.22 + surgeNuc * 0.20) * timeMod;
     {
       const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR);
       g.addColorStop(0,    _hot(ringA));
@@ -909,11 +935,17 @@ function _loop() {
       _ctx.fill();
     }
 
-    // Hard white-hot center dot (always max brightness)
+    // Hard white-hot center dot
     const ptR = w * R_NUC_PT * nucScale * (0.6 + pulse * 0.12);
     _ctx.beginPath();
     _ctx.arc(cx, cy, ptR, 0, TWO_PI);
-    _ctx.fillStyle = _hot(_clamp(0.78 + surgeNuc * 0.12));
+    _ctx.fillStyle = _hot(_clamp(0.94 + surgeNuc * 0.06));
+    _ctx.fill();
+    // Pure white core — absolute brightest point in the interface
+    const coreR = w * R_NUC_PT * nucScale * 0.28;
+    _ctx.beginPath();
+    _ctx.arc(cx, cy, coreR, 0, TWO_PI);
+    _ctx.fillStyle = `rgba(255,255,255,${_clamp(0.92 + surgeNuc * 0.08).toFixed(3)})`;
     _ctx.fill();
     _ctx.restore();
   }
@@ -931,6 +963,23 @@ function _loop() {
 // ─────────────────────────────────────────────────────────────
 // Draw helpers
 // ─────────────────────────────────────────────────────────────
+
+// Arc fragments — 3 drifting arcs, barely visible at idle
+function _drawArcFrags(cx, cy, w, timeMod) {
+  _ctx.save();
+  _ctx.lineCap = 'round';
+  for (const f of _arcFrags) {
+    const breathe = Math.sin(_t * 0.019 + f.ph) * 0.18 + 0.82;
+    const a = f.base * (0.85 + _energy * 2.8) * breathe * timeMod;
+    if (a < 0.004) continue;
+    _ctx.beginPath();
+    _ctx.arc(cx, cy, f.r * w, f.ang, f.ang + f.span);
+    _ctx.strokeStyle = _c(a);
+    _ctx.lineWidth = 0.55;
+    _ctx.stroke();
+  }
+  _ctx.restore();
+}
 
 // Segmented ring with per-segment randomized gaps (Phase 6 asymmetry)
 function _drawGeoRing(cx, cy, w, cfg, gaps, angle, alpha) {

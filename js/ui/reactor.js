@@ -3,34 +3,28 @@
  *
  * Draw order (back → front):
  *   0  Deep atmospheric field          — soft fill, always visible
- *   1  Procedural plasma field         — 10 drifting blobs, additive
+ *   1  Procedural plasma field         — 6 drifting blobs, additive
  *   2  Energy streams                  — radial spokes, nucleus→containment
- *   3  Background geo ring             — 7 segs, fast CW, low opacity
- *   4  Hex blade ring A                — 6 short arcs CW, inner radius
- *   5  Hex blade ring B                — 6 short arcs CCW, outer radius
- *   6  Mid geo ring                    — 4 segs, slow CCW
- *   7  Arc fragments                   — 3 asymmetric drifting arcs
- *   8  Containment ring                — 5-seg bright ring, 3 glow passes
- *   9  Outer geo ring                  — 5 segs, medium CW
- *  10  Energy chamber glow             — offset volumetric fill, additive
- *  11  Nuclear haze                    — wide soft fill, additive
- *  12  Inner glow                      — colored core fill, additive
- *  13  Nucleus hard point              — white-hot center, additive
- *  14  Surge overlay                   — rare events 30–120 s
+ *   3  Inner geo ring                  — 4 segs, CW
+ *   4  Mid geo ring                    — 4 segs, slow CCW
+ *   5  Containment ring                — 5-seg bright ring, 3 glow passes
+ *   6  Energy chamber glow             — cursor-aware offset fill, additive
+ *   7  Nuclear haze                    — cursor-aware soft fill, additive
+ *   8  Inner glow                      — colored core fill, additive
+ *   9  Nucleus hard point              — deep glow center, additive
+ *  10  Surge overlay                   — rare events 30–120 s
  *
- * Visual hierarchy (eye flow):
- *   Nucleus → Containment ring → Geo rings → Plasma → Atmosphere
+ * Removed (were decorative):
+ *   - Hex blade rings A & B  — spinning arcs, communicated nothing
+ *   - Arc fragments           — random drift, communicated nothing
+ *   - Outer geo ring          — too far out, decoration
  *
- * Key design decisions:
- *   - Nucleus layers use globalCompositeOperation='lighter' (additive) so they
- *     genuinely stack toward white-hot rather than being semi-transparent circles.
- *   - Every element has a BASE_ALPHA floor so it is visible at idle (energy≈0.28).
- *   - Hex blades at small radius break symmetry and add mechanical structure.
- *   - Containment ring is the outermost bright structural element (r≈0.30w),
- *     keeping it INSIDE the HUD scanner ring (r≈170px on 520px HUD canvas).
+ * Cursor awareness:
+ *   Chamber glow and nuclear haze shift slightly toward cursor position.
+ *   The orb "notices" where the user is without obvious animation.
  *
  * Thinking mode:
- *   nucleus contracts, blades speed up, plasma accelerates, containment brightens,
+ *   nucleus contracts, plasma accelerates, containment brightens,
  *   chamber pressure expands. All via a single _thinkP lerp (0→1 over ~40 frames).
  */
 
@@ -85,10 +79,18 @@ let _t      = 0;        // frame counter — never resets
 let _energy = 0.32;     // smoothed energy (lerps each frame)
 let _thinkP = 0;        // thinking pressure 0→1
 
+// Cursor position (normalized -1..1), set from mouse.js
+let _curNX = 0;
+let _curNY = 0;
+
+export function setReactorCursor(nx, ny) {
+  _curNX = nx;
+  _curNY = ny;
+}
+
 // Geometry ring angles
-let _gA0 = Math.random() * TWO_PI;   // background (fast CW)
+let _gA0 = Math.random() * TWO_PI;   // inner (fast CW)
 let _gA1 = Math.random() * TWO_PI;   // mid (slow CCW)
-let _gA2 = Math.random() * TWO_PI;   // outer (medium CW)
 
 // Containment ring angle
 let _contAng = Math.random() * TWO_PI;
@@ -110,28 +112,7 @@ let _surgeType  = 0;
 let _surgeBorn  = 0;
 let _surgeNext  = Date.now() + _rnd(30000, 120000);
 
-// ─────────────────────────────────────────────────────────────
-// Hex blade rings  (Phase 3 — mechanical geometry near nucleus)
-// 6 blades per ring, short arcs (~36°), alternating CW/CCW
-// ─────────────────────────────────────────────────────────────
-
-const _bladesA = Array.from({ length: 6 }, (_, i) => ({
-  baseAng: (i / 6) * TWO_PI + (i % 2) * 0.26,   // slight offset for asymmetry
-  span:    Math.PI / 5.5 + (i % 3) * 0.08,       // 33–46° varying per blade
-  lw:      0.9 + (i % 2) * 0.4,
-  alpha:   0.50 + (i % 3) * 0.10,
-}));
-
-const _bladesB = Array.from({ length: 6 }, (_, i) => ({
-  baseAng: (i / 6) * TWO_PI + 0.52 + (i % 2) * 0.18,
-  span:    Math.PI / 6 + (i % 3) * 0.06,
-  lw:      0.7 + (i % 2) * 0.3,
-  alpha:   0.38 + (i % 3) * 0.08,
-}));
-
-// Blade rotation angles (two independent CW + CCW rings)
-let _bladeAngA = Math.random() * TWO_PI;
-let _bladeAngB = Math.random() * TWO_PI;
+// (Hex blade rings removed — were decorative spinning arcs)
 
 // ─────────────────────────────────────────────────────────────
 // Procedural plasma  (Phase 2 — 10 blobs, dual-freq oscillators)
@@ -153,33 +134,19 @@ const _plasma = Array.from({ length: 6 }, (_, i) => ({
 }));
 
 // ─────────────────────────────────────────────────────────────
-// Geometry rings  (Phase 3 — three depths)
+// Geometry rings — two depths (inner + mid only)
 // ─────────────────────────────────────────────────────────────
 
-// rFr expressed as fraction of w; segs, gapF per segment, lw, baseAlpha
 const _GEO = [
-  { rFr: R_INNER,  segs: 4, gapF: 0.155, speed:  0.0035, lw: 1.2, base: 0.42 },  // inner (behind blades' orbit)
-  { rFr: R_MID,    segs: 4, gapF: 0.145, speed: -0.0018, lw: 0.9, base: 0.30 },  // mid
-  { rFr: R_OUTER,  segs: 5, gapF: 0.110, speed:  0.0022, lw: 1.1, base: 0.24 },  // outer
+  { rFr: R_INNER, segs: 4, gapF: 0.155, speed:  0.0035, lw: 1.0, base: 0.38 },
+  { rFr: R_MID,   segs: 4, gapF: 0.145, speed: -0.0018, lw: 0.8, base: 0.24 },
 ];
 
-// Asymmetric per-segment gap widths (Phase 6)
 const _geoGaps = _GEO.map(g =>
   Array.from({ length: g.segs }, () => g.gapF * (0.70 + Math.random() * 0.60))
 );
 
-// ─────────────────────────────────────────────────────────────
-// Arc fragments  (Phase 6 — 3 drifting asymmetric arcs)
-// ─────────────────────────────────────────────────────────────
-
-const _frags = Array.from({ length: 3 }, () => ({
-  ang:   Math.random() * TWO_PI,
-  rFr:   0.20 + Math.random() * 0.11,
-  span:  0.30 + Math.random() * 0.88,
-  speed: (0.0006 + Math.random() * 0.0016) * (Math.random() > 0.5 ? 1 : -1),
-  alpha: 0.22 + Math.random() * 0.20,
-  lw:    0.7  + Math.random() * 0.8,
-}));
+// (Arc fragments removed — were decorative random-drift arcs)
 
 // ─────────────────────────────────────────────────────────────
 // Containment ring  (Phase 4 — primary structural bright ring)
@@ -331,14 +298,10 @@ function _loop() {
 
   // Angle advances
   const tBoost = 1 + tp * 1.85;
-  _gA0       +=  0.0052  * spd * tBoost;   // bg ring CW
-  _gA1       += -0.0020  * spd * tBoost;   // mid ring CCW
-  _gA2       +=  0.0028  * spd * tBoost;   // outer ring CW
-  _contAng   += -0.00072 * spd;             // containment ring CCW (always slow)
-  _innerAng  +=  0.0018  * spd * tBoost;   // inner ring CW
-  _bladeAngA +=  0.0032  * spd * tBoost;   // hex A CW
-  _bladeAngB += -0.0024  * spd * tBoost;   // hex B CCW
-  for (const f of _frags) f.ang += f.speed * spd;
+  _gA0      +=  0.0052  * spd * tBoost;   // inner ring CW
+  _gA1      += -0.0020  * spd * tBoost;   // mid ring CCW
+  _contAng  += -0.00072 * spd;             // containment ring CCW (always slow)
+  _innerAng +=  0.0018  * spd * tBoost;   // inner ring angle (reused for inner)
 
   // Multi-freq sine waves for organic variation
   const s1 = Math.sin(_t * 0.026);
@@ -432,101 +395,23 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 3 — Background geometry ring  (inner reactor ring)
-  // At R_INNER, fast CW, 4 segments
+  // LAYER 3 — Inner geometry ring  (R_INNER, fast CW, 4 segments)
   // ═══════════════════════════════════════════════════════════════
   {
-    const a = (_GEO[0].base + _energy * 0.28) * timeMod;
+    const a = (_GEO[0].base + _energy * 0.26) * timeMod;
     _drawGeoRing(cx, cy, w, _GEO[0], _geoGaps[0], _innerAng, a);
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 4 — Hex blade ring A  (CW, inner radius R_BLADE_A)
-  // 6 short arcs with varying spans — asymmetric, mechanical feel
+  // LAYER 4 — Mid geometry ring  (R_MID, slow CCW, 4 segs)
   // ═══════════════════════════════════════════════════════════════
   {
-    const r = w * R_BLADE_A;
-    const a = (0.35 + _energy * 0.20 + tp * 0.12) * timeMod;
-    _ctx.save();
-    _ctx.lineCap = 'butt';
-    _ctx.strokeStyle = _c(a);
-    for (const b of _bladesA) {
-      const start = _bladeAngA + b.baseAng;
-      _ctx.beginPath();
-      _ctx.arc(cx, cy, r, start, start + b.span);
-      _ctx.lineWidth = b.lw;
-      _ctx.stroke();
-      // Leading-edge bright dot
-      const ex = cx + Math.cos(start + b.span) * r;
-      const ey = cy + Math.sin(start + b.span) * r;
-      _ctx.beginPath();
-      _ctx.arc(ex, ey, b.lw * 1.5, 0, TWO_PI);
-      _ctx.fillStyle = _c(_clamp(a * b.alpha * 3.5));
-      _ctx.fill();
-    }
-    _ctx.restore();
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LAYER 5 — Hex blade ring B  (CCW, outer radius R_BLADE_B)
-  // Offset from ring A — creates counter-rotating depth
-  // ═══════════════════════════════════════════════════════════════
-  {
-    const r = w * R_BLADE_B;
-    const a = (0.28 + _energy * 0.16 + tp * 0.10) * timeMod;
-    _ctx.save();
-    _ctx.lineCap = 'butt';
-    _ctx.strokeStyle = _c(a);
-    for (const b of _bladesB) {
-      const start = _bladeAngB + b.baseAng;
-      _ctx.beginPath();
-      _ctx.arc(cx, cy, r, start, start + b.span);
-      _ctx.lineWidth = b.lw;
-      _ctx.stroke();
-      const ex = cx + Math.cos(start + b.span) * r;
-      const ey = cy + Math.sin(start + b.span) * r;
-      _ctx.beginPath();
-      _ctx.arc(ex, ey, b.lw * 1.3, 0, TWO_PI);
-      _ctx.fillStyle = _c(_clamp(a * b.alpha * 3.0));
-      _ctx.fill();
-    }
-    _ctx.restore();
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LAYER 6 — Mid geometry ring  (R_MID, slow CCW, 4 segs)
-  // ═══════════════════════════════════════════════════════════════
-  {
-    const a = (_GEO[1].base + _energy * 0.22) * timeMod;
+    const a = (_GEO[1].base + _energy * 0.18) * timeMod;
     _drawGeoRing(cx, cy, w, _GEO[1], _geoGaps[1], _gA1, a);
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 7 — Arc fragments  (asymmetric, Phase 6)
-  // ═══════════════════════════════════════════════════════════════
-  {
-    _ctx.save();
-    _ctx.lineCap = 'round';
-    for (const f of _frags) {
-      const r  = f.rFr * w * (1 - tp * 0.06);
-      const fa = (f.alpha + _energy * 0.12) * timeMod;
-      _ctx.beginPath();
-      _ctx.arc(cx, cy, r, f.ang, f.ang + f.span);
-      _ctx.strokeStyle = _c(fa);
-      _ctx.lineWidth   = f.lw;
-      _ctx.stroke();
-      const lx = cx + Math.cos(f.ang + f.span) * r;
-      const ly = cy + Math.sin(f.ang + f.span) * r;
-      _ctx.beginPath();
-      _ctx.arc(lx, ly, f.lw * 1.5, 0, TWO_PI);
-      _ctx.fillStyle = _c(_clamp(fa * 2.0));
-      _ctx.fill();
-    }
-    _ctx.restore();
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LAYER 8 — Containment ring  (primary structure, 3 glow passes)
+  // LAYER 5 — Containment ring  (primary structure, 3 glow passes)
   // This is the outermost crisp element — defines the reactor boundary.
   // Multiple width passes simulate a neon tube with inner glow.
   // ═══════════════════════════════════════════════════════════════
@@ -546,24 +431,15 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 9 — Outer geometry ring  (R_OUTER, medium CW, 5 segs)
-  // Dimmest structural ring — just visible background detail
-  // ═══════════════════════════════════════════════════════════════
-  {
-    const a = (_GEO[2].base + _energy * 0.18) * timeMod;
-    _drawGeoRing(cx, cy, w, _GEO[2], _geoGaps[2], _gA2, a);
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // LAYER 10 — Energy chamber glow  (additive, offset from center)
-  // Slight offset creates asymmetry — the plasma isn't perfectly centered.
-  // Grows during thinking (pressure buildup).
+  // LAYER 6 — Energy chamber glow  (additive, cursor-aware offset)
+  // Shifts toward cursor — the core "notices" where the user is.
   // ═══════════════════════════════════════════════════════════════
   {
     _ctx.save();
     _ctx.globalCompositeOperation = 'lighter';
-    const offX  = cx + (s1 * 0.020 + s3 * 0.011) * w;
-    const offY  = cy + (s2 * 0.017 + s4 * 0.009) * w;
+    // Cursor awareness: shift glow center up to 4% of canvas toward cursor
+    const offX  = cx + (s1 * 0.018 + s3 * 0.010 + _curNX * 0.040) * w;
+    const offY  = cy + (s2 * 0.015 + s4 * 0.008 + _curNY * 0.040) * w;
     const chamR = w * (0.195 + tp * 0.065 + (_surgeType === 0 ? sl * 0.070 : 0));
     const chamA = (0.085 + _energy * 0.090 + tp * 0.080) * timeMod
       + (_surgeType === 0 ? sl * 0.14 : 0);   // internal flare
@@ -581,31 +457,33 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 11 — Nuclear haze  (additive — wide soft fill)
-  // Fills the inner half of the orb with a colored atmosphere.
+  // LAYER 7 — Nuclear haze  (additive — cursor-aware soft fill)
   // ═══════════════════════════════════════════════════════════════
   {
     _ctx.save();
     _ctx.globalCompositeOperation = 'lighter';
-    const nucScale = 1 - tp * 0.25;   // contracts during thinking
+    const nucScale = 1 - tp * 0.25;
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const hazeR = w * R_NUC_HZ * nucScale;
     const hazeA = (0.10 + _energy * 0.09 + surgeNuc * 0.06) * timeMod;
+    // Subtle cursor lean on the haze center
+    const hazeX = cx + _curNX * 0.020 * w;
+    const hazeY = cy + _curNY * 0.020 * w;
 
-    const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, hazeR);
+    const g = _ctx.createRadialGradient(hazeX, hazeY, 0, hazeX, hazeY, hazeR);
     g.addColorStop(0,    _c(hazeA * 2.4));
     g.addColorStop(0.40, _c(hazeA * 1.1));
     g.addColorStop(0.75, _c(hazeA * 0.3));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
     _ctx.beginPath();
-    _ctx.arc(cx, cy, hazeR, 0, TWO_PI);
+    _ctx.arc(hazeX, hazeY, hazeR, 0, TWO_PI);
     _ctx.fill();
     _ctx.restore();
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 12 — Inner glow  (additive — colored, clearly visible)
+  // LAYER 8 — Inner glow  (additive — colored, clearly visible)
   // Bright colored fill at R_NUC_IG. Breathes with s1.
   // ═══════════════════════════════════════════════════════════════
   {
@@ -629,7 +507,7 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 13 — Nucleus hard point  (additive — white-hot center)
+  // LAYER 9 — Nucleus hard point  (additive — deep glow center)
   // Two concentric fills: hot white center + bright colored halo.
   // Always bright — does NOT scale with energy so idle still glows.
   // ═══════════════════════════════════════════════════════════════
@@ -664,7 +542,7 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 14 — Surge overlay  (type-specific effects)
+  // LAYER 10 — Surge overlay  (type-specific effects)
   // ═══════════════════════════════════════════════════════════════
   if (sl > 0.02) {
     _drawSurge(cx, cy, w, sl);

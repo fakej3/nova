@@ -35,7 +35,7 @@
   position: absolute;
   inset: -28px;
   border-radius: 50%;
-  border: 1px solid rgba(var(--orb-color-rgb), 0.08);
+  border: 1px solid rgba(var(--orb-color-rgb), 0.03);
   pointer-events: none;
   will-change: transform, opacity;
 }
@@ -62,10 +62,10 @@
   position: absolute;
   inset: -10px;
   border-radius: 50%;
-  border: 1px solid rgba(var(--orb-color-rgb), 0.22);
+  border: 1px solid rgba(var(--orb-color-rgb), 0.09);
   box-shadow:
-    0 0 16px rgba(var(--orb-color-rgb), 0.1),
-    0 0 35px rgba(var(--orb-color-rgb), 0.04);
+    0 0 10px rgba(var(--orb-color-rgb), 0.04),
+    0 0 22px rgba(var(--orb-color-rgb), 0.02);
   pointer-events: none;
   will-change: transform, opacity;
 }

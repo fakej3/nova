@@ -7,7 +7,8 @@
  * a subtle directional glow that follows the cursor.
  */
 
-import { setHudMouseInfluence } from './hud.js';
+import { setHudMouseInfluence }  from './hud.js';
+import { setReactorCursor }     from './reactor.js';
 
 const LERP_SPEED = 0.072;   // smoothing (lower = more lag = heavier feel)
 const MAX_SHIFT  = 22;       // max px any layer can shift
@@ -97,6 +98,7 @@ function _tick() {
   const dy = currentY;
 
   setHudMouseInfluence(currentX, currentY);
+  setReactorCursor(currentX, currentY);
 
   // Skip tiny movements for parallax and light source
   if (Math.abs(dx) > 0.0005 || Math.abs(dy) > 0.0005) {

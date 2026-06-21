@@ -137,7 +137,7 @@ let _bladeAngB = Math.random() * TWO_PI;
 // Procedural plasma  (Phase 2 — 10 blobs, dual-freq oscillators)
 // ─────────────────────────────────────────────────────────────
 
-const _plasma = Array.from({ length: 10 }, (_, i) => ({
+const _plasma = Array.from({ length: 6 }, (_, i) => ({
   baseAng: (i / 10) * TWO_PI + Math.random() * 0.9,
   baseR:   0.06 + Math.random() * 0.18,   // fraction of w
   f1:      0.0055 + Math.random() * 0.0050,
@@ -590,7 +590,7 @@ function _loop() {
     const nucScale = 1 - tp * 0.25;   // contracts during thinking
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const hazeR = w * R_NUC_HZ * nucScale;
-    const hazeA = (0.14 + _energy * 0.12 + surgeNuc * 0.08) * timeMod;
+    const hazeA = (0.10 + _energy * 0.09 + surgeNuc * 0.06) * timeMod;
 
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, hazeR);
     g.addColorStop(0,    _c(hazeA * 2.4));
@@ -614,7 +614,7 @@ function _loop() {
     const nucScale = 1 - _thinkP * 0.25;
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const igR = w * R_NUC_IG * nucScale * (1 + s1 * 0.08);
-    const igA = (0.38 + _energy * 0.28 + surgeNuc * 0.22) * timeMod;
+    const igA = (0.26 + _energy * 0.20 + surgeNuc * 0.16) * timeMod;
 
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, igR);
     g.addColorStop(0,    _hot(igA));
@@ -658,7 +658,7 @@ function _loop() {
     const ptR = w * R_NUC_PT * nucScale * (0.6 + pulse * 0.12);
     _ctx.beginPath();
     _ctx.arc(cx, cy, ptR, 0, TWO_PI);
-    _ctx.fillStyle = _hot(_clamp(0.85 + surgeNuc * 0.15));
+    _ctx.fillStyle = _hot(_clamp(0.62 + surgeNuc * 0.12));
     _ctx.fill();
     _ctx.restore();
   }

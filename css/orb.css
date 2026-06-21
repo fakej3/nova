@@ -5,8 +5,8 @@
 
 #orb-container {
   position: relative;
-  width: clamp(200px, 22vw, 280px);
-  height: clamp(200px, 22vw, 280px);
+  width: clamp(240px, 26vw, 340px);
+  height: clamp(240px, 26vw, 340px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -87,8 +87,8 @@
 
 #orb {
   position: relative;
-  width: clamp(155px, 17vw, 220px);
-  height: clamp(155px, 17vw, 220px);
+  width: clamp(185px, 20vw, 265px);
+  height: clamp(185px, 20vw, 265px);
   border-radius: 50%;
   background: var(--bg-primary);
   border: 1px solid rgba(var(--orb-color-rgb), 0.14);
@@ -189,7 +189,7 @@
 .state-idle #orb-ring-2     { animation: ring-breathe 4s ease-in-out infinite 1s; }
 .state-idle #orb-ring-3     { animation: ring-breathe 4s ease-in-out infinite 1.4s; }
 .state-idle #orb-core       { animation: core-idle 4s ease-in-out infinite; }
-.state-idle #orb-inner-ring { animation: inner-ring-idle 8s linear infinite; }
+.state-idle #orb-inner-ring { animation: inner-ring-idle 16s linear infinite; }
 
 @keyframes orb-breathe {
   0%, 100% { transform: scale(1);     opacity: 1;    }
@@ -232,7 +232,7 @@
 .state-listening #orb-ring-2     { animation: ripple-listen 1.6s ease-out infinite 0.35s; }
 .state-listening #orb-ring-3     { animation: ripple-listen 1.6s ease-out infinite 0.7s; }
 .state-listening #orb-core       { animation: core-listen 1.6s ease-in-out infinite; }
-.state-listening #orb-inner-ring { animation: inner-ring-idle 3s linear infinite; }
+.state-listening #orb-inner-ring { animation: inner-ring-idle 7s linear infinite; }
 .state-listening #orb-scan       { animation: scan-listen 1.6s ease-in-out infinite; }
 
 @keyframes orb-listen {
@@ -272,11 +272,11 @@
    ============================================================ */
 
 .state-thinking #orb            { animation: orb-think 2.2s ease-in-out infinite; }
-.state-thinking #orb-shimmer    { animation: shimmer-think 1.8s linear infinite; }
-.state-thinking #orb-inner-ring { animation: inner-ring-think 1.4s linear infinite; }
-.state-thinking #orb-ring-1     { animation: ring-think-1 3s linear infinite; }
-.state-thinking #orb-ring-2     { animation: ring-think-2 5s linear infinite reverse; }
-.state-thinking #orb-ring-3     { animation: ring-think-2 7s linear infinite; }
+.state-thinking #orb-shimmer    { animation: shimmer-think 5s linear infinite; }
+.state-thinking #orb-inner-ring { animation: inner-ring-think 7s linear infinite; }
+.state-thinking #orb-ring-1     { animation: ring-think-1 9s linear infinite; }
+.state-thinking #orb-ring-2     { animation: ring-think-2 13s linear infinite reverse; }
+.state-thinking #orb-ring-3     { animation: ring-think-2 18s linear infinite; }
 .state-thinking #orb-glow-outer { animation: glow-think 2.2s ease-in-out infinite; }
 .state-thinking #orb-core       { animation: core-think 2.2s ease-in-out infinite; }
 .state-thinking #orb-scan       { animation: scan-think 2s linear infinite; }
@@ -349,7 +349,7 @@
 .state-speaking   #orb-inner-ring { animation: inner-ring-speak 0.9s ease-in-out infinite; }
 
 .state-responding #orb-shimmer,
-.state-speaking   #orb-shimmer    { animation: shimmer-think 1.2s linear infinite; }
+.state-speaking   #orb-shimmer    { animation: shimmer-think 3s linear infinite; }
 
 @keyframes orb-speak {
   0%, 100% { transform: scale(1);    }
@@ -388,7 +388,7 @@
 .state-success #orb-ring-2     { animation: ring-success 2.5s ease-out forwards 0.15s; }
 .state-success #orb-ring-3     { animation: ring-success 2.5s ease-out forwards 0.30s; }
 .state-success #orb-core       { animation: core-success 2.5s ease-out forwards; }
-.state-success #orb-inner-ring { animation: inner-ring-think 1.4s linear infinite; }
+.state-success #orb-inner-ring { animation: inner-ring-think 6s linear infinite; }
 .state-success #orb-field      { animation: field-success 2.5s ease-out forwards; }
 
 @keyframes orb-success {

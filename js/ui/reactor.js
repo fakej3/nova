@@ -4,20 +4,20 @@
  * Draw order (back → front):
  *   0  Deep atmospheric field          — soft fill, always visible
  *   1  Procedural plasma field         — 6 drifting blobs, additive
- *   2  Energy streams                  — radial spokes, nucleus→containment
- *   3  Inner geo ring                  — 4 segs, CW
- *   4  Mid geo ring                    — 4 segs, slow CCW
- *   5  Containment ring                — 5-seg bright ring, 3 glow passes
- *   6  Energy chamber glow             — cursor-aware offset fill, additive
- *   7  Nuclear haze                    — cursor-aware soft fill, additive
- *   8  Inner glow                      — colored core fill, additive
- *   9  Nucleus hard point              — deep glow center, additive
- *  10  Surge overlay                   — rare events 30–120 s
- *
- * Removed (were decorative):
- *   - Hex blade rings A & B  — spinning arcs, communicated nothing
- *   - Arc fragments           — random drift, communicated nothing
- *   - Outer geo ring          — too far out, decoration
+ *   2  Arc fragments                   — 11 drifting arcs, depth in mid-zone
+ *   3  Energy streams                  — radial spokes, nucleus→containment
+ *   4  Orbital comets                  — 5 orbiters with trailing arcs, additive
+ *   5  Neural network                  — nodes/edges/signals (v18)
+ *   6  Hex blade rings A & B           — inner clockwork, 6 segs each
+ *   7  Inner geo ring                  — 4 segs, CW
+ *   8  Mid geo ring                    — 4 segs, slow CCW
+ *   9  Containment ring                — 5-seg bright ring, 3 glow passes
+ *  10  Outer geo ring                  — 3 segs, very slow CCW, dramatic boundary
+ *  11  Energy chamber glow             — cursor-aware offset fill, additive
+ *  12  Nuclear haze                    — cursor-aware soft fill, additive
+ *  13  Inner glow                      — colored core fill, additive
+ *  14  Nucleus hard point              — deep glow center, additive
+ *  15  Surge overlay                   — rare events 30–120 s
  *
  * Cursor awareness:
  *   Chamber glow and nuclear haze shift slightly toward cursor position.
@@ -91,12 +91,17 @@ export function setReactorCursor(nx, ny) {
 // Geometry ring angles
 let _gA0 = Math.random() * TWO_PI;   // inner (fast CW)
 let _gA1 = Math.random() * TWO_PI;   // mid (slow CCW)
+let _gA2 = Math.random() * TWO_PI;   // outer (very slow CCW)
 
 // Containment ring angle
 let _contAng = Math.random() * TWO_PI;
 
 // Inner reactor ring angle (CW, slightly faster than containment)
 let _innerAng = Math.random() * TWO_PI;
+
+// Hex blade ring angles
+let _bladeAngA = Math.random() * TWO_PI;  // inner ring CW (fast)
+let _bladeAngB = Math.random() * TWO_PI;  // outer ring CCW (medium)
 
 // Awareness
 let _awIdleLevel = 0;
@@ -112,10 +117,8 @@ let _surgeType  = 0;
 let _surgeBorn  = 0;
 let _surgeNext  = Date.now() + _rnd(30000, 120000);
 
-// (Hex blade rings removed — were decorative spinning arcs)
-
 // ─────────────────────────────────────────────────────────────
-// Procedural plasma  (Phase 2 — 10 blobs, dual-freq oscillators)
+// Procedural plasma  (6 blobs, dual-freq oscillators)
 // ─────────────────────────────────────────────────────────────
 
 const _plasma = Array.from({ length: 6 }, (_, i) => ({
@@ -134,17 +137,49 @@ const _plasma = Array.from({ length: 6 }, (_, i) => ({
 }));
 
 // ─────────────────────────────────────────────────────────────
-// Geometry rings — two depths (inner + mid only)
+// Geometry rings — three depths (inner, mid, outer)
 // ─────────────────────────────────────────────────────────────
 
 const _GEO = [
   { rFr: R_INNER, segs: 4, gapF: 0.155, speed:  0.0035, lw: 1.0, base: 0.38 },
   { rFr: R_MID,   segs: 4, gapF: 0.145, speed: -0.0018, lw: 0.8, base: 0.24 },
+  { rFr: R_OUTER, segs: 3, gapF: 0.185, speed: -0.0007, lw: 0.6, base: 0.12 },
 ];
 
 const _geoGaps = _GEO.map(g =>
   Array.from({ length: g.segs }, () => g.gapF * (0.70 + Math.random() * 0.60))
 );
+
+// ─────────────────────────────────────────────────────────────
+// Arc fragments  — 11 drifting short arcs in the mid-zone
+// Each has its own radius, span, angular drift speed, and alpha.
+// They give depth and constant background motion without adding
+// any new "system" — they're simply magnetic field debris.
+// ─────────────────────────────────────────────────────────────
+
+const _arcFrags = Array.from({ length: 11 }, () => ({
+  ang:   Math.random() * TWO_PI,
+  r:     0.105 + Math.random() * 0.175,           // fraction of w (blade ring to containment)
+  span:  0.10  + Math.random() * 0.30,            // arc length in radians
+  speed: (Math.random() - 0.5) * 0.0014,          // very slow drift, bidirectional
+  alpha: 0.048 + Math.random() * 0.078,
+  lw:    0.4   + Math.random() * 0.45,
+}));
+
+// ─────────────────────────────────────────────────────────────
+// Orbital comets  — 5 orbiters with additive trailing arcs
+// Each comet traces its own orbital path. The trail is drawn
+// analytically (past angles) so no position history needed.
+// Always moving — never static.
+// ─────────────────────────────────────────────────────────────
+
+const _comets = Array.from({ length: 5 }, () => ({
+  ang:   Math.random() * TWO_PI,
+  r:     0.092 + Math.random() * 0.168,           // fraction of w
+  speed: (0.0032 + Math.random() * 0.0045) * (Math.random() > 0.5 ? 1 : -1),
+  alpha: 0.12  + Math.random() * 0.14,
+  trail: 38    + Math.floor(Math.random() * 22),  // frames of trail
+}));
 
 // ─────────────────────────────────────────────────────────────
 // Internal Neural Network
@@ -654,10 +689,20 @@ function _loop() {
 
   // Angle advances
   const tBoost = 1 + tp * 1.85;
-  _gA0      +=  0.0052  * spd * tBoost;   // inner ring CW
-  _gA1      += -0.0020  * spd * tBoost;   // mid ring CCW
-  _contAng  += -0.00072 * spd;             // containment ring CCW (always slow)
-  _innerAng +=  0.0018  * spd * tBoost;   // inner ring angle (reused for inner)
+  _gA0       +=  0.0052  * spd * tBoost;   // inner ring CW
+  _gA1       += -0.0020  * spd * tBoost;   // mid ring CCW
+  _gA2       += -0.00042 * spd;            // outer ring CCW (extremely slow)
+  _contAng   += -0.00072 * spd;            // containment ring CCW
+  _innerAng  +=  0.0018  * spd * tBoost;   // energy streams rotation
+  _bladeAngA +=  0.0062  * spd * tBoost;   // inner blade ring CW
+  _bladeAngB += -0.0036  * spd * tBoost;   // outer blade ring CCW
+
+  // Arc fragments drift
+  for (const f of _arcFrags) f.ang += f.speed * spd;
+
+  // Comet orbital advance — faster during thinking
+  const cSpd = 1 + tp * 0.85;
+  for (const c of _comets) c.ang += c.speed * spd * cSpd;
 
   // Multi-freq sine waves for organic variation
   const s1 = Math.sin(_t * 0.026);
@@ -718,7 +763,14 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 2 — Energy streams  (radial spokes, nucleus → containment)
+  // LAYER 2 — Arc fragments  (drifting short arcs, mid-zone depth)
+  // Always moving, never structured. Give the interior the sense of
+  // things suspended in a magnetic field.
+  // ═══════════════════════════════════════════════════════════════
+  _drawArcFrags(cx, cy, w, timeMod);
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 3 — Energy streams  (radial spokes, nucleus → containment)
   // Span from nucleus edge to containment ring for visual coherence.
   // ═══════════════════════════════════════════════════════════════
   {
@@ -751,7 +803,14 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 2.5 — Internal neural network
+  // LAYER 4 — Orbital comets  (trailing arcs on orbital paths)
+  // Constant orbital motion at varying radii and speeds.
+  // Additive blend makes them glow through the plasma layer.
+  // ═══════════════════════════════════════════════════════════════
+  _drawComets(cx, cy, w, timeMod, tp);
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 5 — Internal neural network
   // Nodes drift slowly inside containment ring. Edges form between
   // nearby nodes, carry signals, then dissolve. Analysis traces
   // flash during thinking. Nothing rotates forever — everything
@@ -761,7 +820,15 @@ function _loop() {
   _drawNet(cx, cy, w, state, timeMod);
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 3 — Inner geometry ring  (R_INNER, fast CW, 4 segments)
+  // LAYER 6 — Hex blade rings A & B  (inner clockwork, 6 segs each)
+  // Two counter-rotating segmented rings close to the nucleus.
+  // They give the interior mechanical depth — the sense of a
+  // machine running continuously inside the sphere.
+  // ═══════════════════════════════════════════════════════════════
+  _drawBlades(cx, cy, w, timeMod);
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 7 — Inner geometry ring  (R_INNER, fast CW, 4 segments)
   // ═══════════════════════════════════════════════════════════════
   {
     const a = (_GEO[0].base + _energy * 0.26) * timeMod;
@@ -769,7 +836,7 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 4 — Mid geometry ring  (R_MID, slow CCW, 4 segs)
+  // LAYER 8 — Mid geometry ring  (R_MID, slow CCW, 4 segs)
   // ═══════════════════════════════════════════════════════════════
   {
     const a = (_GEO[1].base + _energy * 0.18) * timeMod;
@@ -797,7 +864,18 @@ function _loop() {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  // LAYER 6 — Energy chamber glow  (additive, cursor-aware offset)
+  // LAYER 10 — Outer geometry ring  (R_OUTER, 3 segs, very slow CCW)
+  // The outermost structural ring. Gives the orb a dramatic outer
+  // boundary — the sense of a containment field surrounding the
+  // inner reactor. Very faint at idle, brightens under energy.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    const a = (_GEO[2].base + _energy * 0.14) * timeMod;
+    _drawGeoRing(cx, cy, w, _GEO[2], _geoGaps[2], _gA2, a);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 11 — Energy chamber glow  (additive, cursor-aware offset)
   // Shifts toward cursor — the core "notices" where the user is.
   // ═══════════════════════════════════════════════════════════════
   {
@@ -920,6 +998,111 @@ function _loop() {
 // ─────────────────────────────────────────────────────────────
 // Draw helpers
 // ─────────────────────────────────────────────────────────────
+
+// Arc fragments — drifting short arcs in the containment zone
+function _drawArcFrags(cx, cy, w, timeMod) {
+  _ctx.save();
+  _ctx.lineCap = 'round';
+  for (const f of _arcFrags) {
+    const r = f.r * w;
+    const a = f.alpha * timeMod;
+    if (a < 0.004) continue;
+    _ctx.beginPath();
+    _ctx.arc(cx, cy, r, f.ang, f.ang + f.span);
+    _ctx.strokeStyle = _c(a);
+    _ctx.lineWidth   = f.lw;
+    _ctx.stroke();
+  }
+  _ctx.restore();
+}
+
+// Orbital comets — trailing arc drawn analytically from current angle backward
+function _drawComets(cx, cy, w, timeMod, tp) {
+  _ctx.save();
+  _ctx.globalCompositeOperation = 'lighter';
+  _ctx.lineCap = 'round';
+  for (const c of _comets) {
+    const r  = c.r * w;
+    const a  = (c.alpha + tp * 0.10) * timeMod;
+    if (a < 0.004) continue;
+    // Analytically compute trail start: angularly behind the head
+    const trailAng = c.trail * Math.abs(c.speed);
+    const tailA    = c.ang - Math.sign(c.speed) * trailAng;
+    const hx = cx + Math.cos(c.ang) * r;
+    const hy = cy + Math.sin(c.ang) * r;
+    const tx = cx + Math.cos(tailA) * r;
+    const ty = cy + Math.sin(tailA) * r;
+
+    // Gradient tail→head
+    const grad = _ctx.createLinearGradient(tx, ty, hx, hy);
+    grad.addColorStop(0, _c(0));
+    grad.addColorStop(1, _c(a * 0.65));
+
+    _ctx.beginPath();
+    if (c.speed > 0) {
+      _ctx.arc(cx, cy, r, tailA, c.ang, false);
+    } else {
+      _ctx.arc(cx, cy, r, c.ang, tailA, false);
+    }
+    _ctx.strokeStyle = grad;
+    _ctx.lineWidth   = 0.95;
+    _ctx.stroke();
+
+    // Head dot — slightly brighter
+    _ctx.beginPath();
+    _ctx.arc(hx, hy, 2.0, 0, TWO_PI);
+    _ctx.fillStyle = _c(_clamp(a * 1.45));
+    _ctx.fill();
+  }
+  _ctx.restore();
+}
+
+// Hex blade rings — two counter-rotating segmented rings near nucleus
+function _drawBlades(cx, cy, w, timeMod) {
+  const SEGS     = 6;
+  const SEG_FRAC = (1 - SEGS * 0.055) / SEGS;   // arc length per segment (fraction of full circle)
+  const GAP_FRAC = 0.055;
+  _ctx.save();
+  _ctx.lineCap = 'butt';
+
+  // Ring A — inner, CW
+  {
+    const r  = R_BLADE_A * w;
+    const a  = (0.095 + _energy * 0.065) * timeMod;
+    if (a >= 0.006) {
+      _ctx.strokeStyle = _c(a);
+      _ctx.lineWidth   = 0.75;
+      let cursor = _bladeAngA;
+      for (let i = 0; i < SEGS; i++) {
+        const span = SEG_FRAC * TWO_PI;
+        _ctx.beginPath();
+        _ctx.arc(cx, cy, r, cursor, cursor + span);
+        _ctx.stroke();
+        cursor += span + GAP_FRAC * TWO_PI;
+      }
+    }
+  }
+
+  // Ring B — outer, CCW
+  {
+    const r  = R_BLADE_B * w;
+    const a  = (0.075 + _energy * 0.050) * timeMod;
+    if (a >= 0.006) {
+      _ctx.strokeStyle = _c(a);
+      _ctx.lineWidth   = 0.65;
+      let cursor = _bladeAngB;
+      for (let i = 0; i < SEGS; i++) {
+        const span = SEG_FRAC * TWO_PI;
+        _ctx.beginPath();
+        _ctx.arc(cx, cy, r, cursor, cursor + span);
+        _ctx.stroke();
+        cursor += span + GAP_FRAC * TWO_PI;
+      }
+    }
+  }
+
+  _ctx.restore();
+}
 
 // Segmented ring with per-segment randomized gaps (Phase 6 asymmetry)
 function _drawGeoRing(cx, cy, w, cfg, gaps, angle, alpha) {

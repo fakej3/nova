@@ -71,4 +71,8 @@ export const EVENTS = {
 
   // Navigation (emitted by modules to request a panel open)
   REQUEST_SWITCH_VIEW: 'view:switch_request',
+
+  // Orb touch interactions
+  ORB_TAPPED:     'orb:tapped',
+  ORB_LONG_PRESS: 'orb:long_press',
 };

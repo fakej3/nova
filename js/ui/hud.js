@@ -166,6 +166,18 @@ export async function initHud() {
   Bus.on(EVENTS.TASK_DELETED,   () => { _taskPending = Math.max(0, _taskPending - 1); _taskTotal = Math.max(0, _taskTotal - 1); _updateRingTargets(); _updateSystemBar(); });
   Bus.on(EVENTS.MEMORY_CREATED, () => { _rings.mem.pulse = 0.8; _spawnAbsorption('memory'); });
 
+  // Orb tap → single gentle pulse ring from glass edge
+  Bus.on(EVENTS.ORB_TAPPED, () => {
+    _spawnPulse(52);
+  });
+
+  // Orb long press → curiosity-style deep scan (same visual language as idle curiosity)
+  Bus.on(EVENTS.ORB_LONG_PRESS, () => {
+    _spawnPulse(30, true);
+    setTimeout(() => _spawnPulse(58, true), 260);
+    setTimeout(() => _spawnPulse(88, true), 520);
+  });
+
   Bus.on(EVENTS.ORB_STATE_CHANGED, ({ state }) => {
     if (state === 'success') {
       _spawnPulse(60); setTimeout(() => _spawnPulse(80), 220); setTimeout(() => _spawnPulse(100), 440);

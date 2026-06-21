@@ -34,6 +34,62 @@ export function initOrb() {
   _statusText  = document.getElementById('orb-status-text');
   _nameDisplay = document.getElementById('ai-name-display');
   setOrbState('idle');
+  _wireOrbTouch();
+}
+
+function _wireOrbTouch() {
+  if (!_container) return;
+
+  let _lpTimer     = null;
+  let _touchActive = false;
+
+  const _cancelLp = () => {
+    if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; }
+  };
+
+  _container.addEventListener('touchstart', () => {
+    _touchActive = true;
+    _lpTimer = setTimeout(() => {
+      _touchActive = false;
+      // Long press: brief glow acknowledgment + curiosity pulses in HUD
+      _container.classList.remove('orb-curiosity');
+      void _container.offsetWidth;
+      _container.classList.add('orb-curiosity');
+      setTimeout(() => _container.classList.remove('orb-curiosity'), 700);
+      Bus.emit(EVENTS.ORB_LONG_PRESS);
+    }, 500);
+  }, { passive: true });
+
+  _container.addEventListener('touchend', () => {
+    _cancelLp();
+    if (_touchActive) {
+      _touchActive = false;
+      _fireTap();
+    }
+  }, { passive: true });
+
+  _container.addEventListener('touchcancel', () => {
+    _cancelLp();
+    _touchActive = false;
+  }, { passive: true });
+
+  // Cancel long press if finger moves significantly
+  _container.addEventListener('touchmove', () => {
+    _cancelLp();
+    _touchActive = false;
+  }, { passive: true });
+
+  // Desktop click support (for testing and mouse users)
+  _container.addEventListener('click', () => _fireTap());
+}
+
+function _fireTap() {
+  if (!_container) return;
+  _container.classList.remove('orb-tap');
+  void _container.offsetWidth;
+  _container.classList.add('orb-tap');
+  setTimeout(() => _container.classList.remove('orb-tap'), 500);
+  Bus.emit(EVENTS.ORB_TAPPED);
 }
 
 export function setOrbState(rawState) {

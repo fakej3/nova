@@ -46,9 +46,11 @@ export function initMouse() {
   window.addEventListener('resize', _cacheRect, { passive: true });
   window.addEventListener('scroll', _cacheRect, { passive: true });
 
-  document.addEventListener('mousemove',  _onMove,       { passive: true });
-  document.addEventListener('mouseleave', _onLeave,      { passive: true });
-  document.addEventListener('touchmove',  _onTouchMove,  { passive: true });
+  document.addEventListener('mousemove',   _onMove,        { passive: true });
+  document.addEventListener('mouseleave',  _onLeave,       { passive: true });
+  document.addEventListener('touchmove',   _onTouchMove,   { passive: true });
+  document.addEventListener('touchend',    _onTouchEnd,    { passive: true });
+  document.addEventListener('touchcancel', _onTouchEnd,    { passive: true });
 
   // Respect reduced motion preference
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -87,6 +89,13 @@ function _onTouchMove(e) {
   const cy = _orbRect.top  + _orbRect.height / 2;
   targetX  = Math.max(-1, Math.min(1, (t.clientX - cx) / (window.innerWidth  * 0.45)));
   targetY  = Math.max(-1, Math.min(1, (t.clientY - cy) / (window.innerHeight * 0.45)));
+}
+
+function _onTouchEnd() {
+  // Return orb layers to center when finger lifts.
+  // The lerp in _tick() makes this smooth rather than snapping.
+  targetX = 0;
+  targetY = 0;
 }
 
 function _tick() {

@@ -11,6 +11,8 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 /* ── Outer energy field ─────────────────────────────────────── */
@@ -620,6 +622,41 @@
     0 0 24px  rgba(var(--orb-color-rgb), 0.08),
     0 0 48px  rgba(var(--orb-color-rgb), 0.04),
     inset 0 0 10px rgba(var(--orb-color-rgb), 0.06);
+}
+
+/* ============================================================
+   Touch interactions — tap pulse and long-press acknowledgment
+   ============================================================ */
+
+/* Tap: brief scale bounce on the orb sphere, ring expands out */
+.orb-tap #orb {
+  animation: orb-tap-pulse 0.48s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+.orb-tap #orb-ring-1 {
+  animation: ring-tap-out 0.48s ease-out !important;
+}
+
+@keyframes orb-tap-pulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ring-tap-out {
+  0%   { transform: scale(1);    opacity: 0.9; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+/* Long press: outer glow swells to acknowledge curiosity trigger */
+.orb-curiosity #orb-glow-outer {
+  animation: glow-curiosity-ack 0.7s ease-out !important;
+}
+
+@keyframes glow-curiosity-ack {
+  0%   { opacity: 0.75; transform: scale(1); }
+  35%  { opacity: 1;    transform: scale(1.22); }
+  100% { opacity: 0.75; transform: scale(1); }
 }
 
 /* ── Reduced motion ─────────────────────────────────────────── */

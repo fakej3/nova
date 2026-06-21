@@ -1165,3 +1165,40 @@ input, textarea, select {
   .onboarding-title { font-size: 18px; }
   .onboarding-logo  { font-size: 28px; }
 }
+
+/* ============================================================
+   Touch — usability and interaction quality
+   ============================================================ */
+
+/* Suppress the blue flash on tap for all interactive elements */
+button,
+input,
+select,
+textarea,
+.nav-dot,
+#orb-container {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Smooth vertical shift when mobile keyboard opens/closes */
+#input-bar {
+  transition: bottom 0.22s ease;
+}
+
+/* Ensure settings button meets 44×44 minimum touch target on mobile */
+@media (max-width: 640px) {
+  #settings-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Prevent hover styles from sticking after tap on touch-only devices */
+@media (hover: none) {
+  .nav-dot:hover {
+    color: var(--text-secondary);
+    background: transparent;
+    border-color: transparent;
+  }
+}

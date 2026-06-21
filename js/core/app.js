@@ -83,6 +83,8 @@ async function boot() {
     _wireKeyboardShortcuts();
     _wireOpenResult();
     _wireSwitchViewRequest();
+    _wireGestures();
+    _wireInputKeyboard();
 
     // Refresh timeline if open when a new event is logged
     Bus.on(EVENTS.EVENT_LOGGED, () => {
@@ -431,6 +433,71 @@ function _wireConnectivity() {
   window.addEventListener('offline', updateDot);
   State.set('connectivity', navigator.onLine);
   if (dot) dot.classList.toggle('offline', !navigator.onLine);
+}
+
+// ── Swipe Gestures ────────────────────────────────────────────
+// Swipe right → open active panel.  Swipe left → close panel.
+// Does not intercept vertical scrolls or touches inside panel content.
+
+function _wireGestures() {
+  const SWIPE_MIN  = 65;   // minimum horizontal distance (px)
+  const AXIS_LOCK  = 48;   // cancel if vertical drift exceeds this
+  const TIME_MAX   = 420;  // ms — faster than this counts as swipe
+
+  let _sx = 0, _sy = 0, _st = 0, _live = false;
+
+  document.addEventListener('touchstart', (e) => {
+    // Ignore touches originating inside scrollable/interactive regions
+    if (e.target.closest('#panel-content, #panel-header, #nav-dots, #input-bar')) return;
+    _live = true;
+    _sx   = e.touches[0].clientX;
+    _sy   = e.touches[0].clientY;
+    _st   = Date.now();
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!_live) return;
+    if (Math.abs(e.touches[0].clientY - _sy) > AXIS_LOCK) _live = false;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!_live) return;
+    _live = false;
+    const dx = e.changedTouches[0].clientX - _sx;
+    const dt = Date.now() - _st;
+    if (Math.abs(dx) < SWIPE_MIN || dt > TIME_MAX) return;
+
+    if (dx > 0) {
+      // Swipe right → open panel with last non-home view
+      const view = State.get('activeView');
+      if (view && view !== 'home' && !State.get('panelOpen')) _openPanel(view);
+    } else {
+      // Swipe left → close panel
+      if (State.get('panelOpen')) _closePanel();
+    }
+  }, { passive: true });
+}
+
+// ── Mobile keyboard — keep input bar above keyboard ───────────
+// Uses visualViewport API to detect keyboard height and shifts input bar up.
+
+function _wireInputKeyboard() {
+  const bar = document.getElementById('input-bar');
+  if (!bar || !window.visualViewport) return;
+
+  const _update = () => {
+    const vv     = window.visualViewport;
+    const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    bar.style.bottom = offset > 0 ? `${offset}px` : '';
+  };
+
+  window.visualViewport.addEventListener('resize', _update, { passive: true });
+  window.visualViewport.addEventListener('scroll', _update, { passive: true });
+
+  // Reset when input loses focus (keyboard dismissed)
+  document.getElementById('nova-input')?.addEventListener('blur', () => {
+    bar.style.bottom = '';
+  }, { passive: true });
 }
 
 // ── Run ───────────────────────────────────────────────────────

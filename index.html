@@ -34,7 +34,6 @@
       <div class="hud-corner corner-tr"></div>
       <div class="hud-corner corner-bl"></div>
       <div class="hud-corner corner-br"></div>
-      <div id="scan-line"></div>
       <div id="nova-greeting"></div>
       <div id="system-bar">
         <span id="sys-notes">0 NOTES</span>
@@ -79,6 +78,10 @@
       <button class="nav-dot" data-view="search" title="Search (⌘K)" aria-label="Global search view" aria-pressed="false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <span class="nav-label">Search</span>
+      </button>
+      <button class="nav-dot" data-view="chat" title="Conversation" aria-label="Conversation view" aria-pressed="false">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="nav-label">Chat</span>
       </button>
     </nav>
 
@@ -241,6 +244,49 @@
         <div class="modal-footer">
           <button id="settings-save" class="btn btn-primary">Save Settings</button>
         </div>
+      </div>
+    </div>
+
+    <!-- First-run onboarding overlay -->
+    <div id="onboarding-overlay" hidden aria-modal="true" role="dialog" aria-label="Welcome to NOVA">
+      <div class="onboarding-backdrop"></div>
+      <div class="onboarding-card">
+        <div class="onboarding-header">
+          <div class="onboarding-logo" aria-hidden="true">◎</div>
+          <h1 class="onboarding-title">NOVA</h1>
+          <p class="onboarding-subtitle">Your personal intelligence system</p>
+        </div>
+        <ul class="onboarding-features" aria-label="Features">
+          <li class="onboarding-feature">
+            <span class="onboarding-icon" aria-hidden="true">◇</span>
+            <div>
+              <strong>Notes</strong>
+              <span>Create and organize notes. Tag them, pin them, search them.</span>
+            </div>
+          </li>
+          <li class="onboarding-feature">
+            <span class="onboarding-icon" aria-hidden="true">○</span>
+            <div>
+              <strong>Tasks</strong>
+              <span>Track what needs to get done. Set priority and due dates.</span>
+            </div>
+          </li>
+          <li class="onboarding-feature">
+            <span class="onboarding-icon" aria-hidden="true">◈</span>
+            <div>
+              <strong>Memory</strong>
+              <span>NOVA builds memory from your notes and tasks automatically.</span>
+            </div>
+          </li>
+          <li class="onboarding-feature">
+            <span class="onboarding-icon" aria-hidden="true">◉</span>
+            <div>
+              <strong>Chat</strong>
+              <span>Ask NOVA about your notes, tasks, and memories. Type below.</span>
+            </div>
+          </li>
+        </ul>
+        <button id="onboarding-start" class="btn btn-primary onboarding-cta">Get started</button>
       </div>
     </div>
 

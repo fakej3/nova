@@ -25,6 +25,8 @@ import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
 import { renderSearchPanel }           from '../modules/search-panel.js';
 import { renderMemoriesPanel }         from '../modules/memories-panel.js';
 import { renderTimeline }              from '../modules/timeline.js';
+import { initConversation, handleUserMessage, renderConversationPanel } from '../modules/conversation.js';
+import { initOnboarding }              from '../ui/onboarding.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ async function boot() {
     // 9. Init modules
     await initNotes();
     await initTasks();
+    initConversation();
 
     // 10. Wire UI
     _wireNavigation();
@@ -79,6 +82,7 @@ async function boot() {
     _wireConnectivity();
     _wireKeyboardShortcuts();
     _wireOpenResult();
+    _wireSwitchViewRequest();
 
     // Refresh timeline if open when a new event is logged
     Bus.on(EVENTS.EVENT_LOGGED, () => {
@@ -110,6 +114,9 @@ async function boot() {
     _updateAiNameDisplay();
 
     await logEvent(EVENT_TYPES.APP_STARTED, 'NOVA started');
+
+    // 13. First-run onboarding (after orb is idle so it doesn't interrupt boot)
+    await initOnboarding();
 
   } catch (err) {
     console.error('[NOVA] Boot failed:', err);
@@ -195,6 +202,7 @@ const VIEW_LABELS = {
   events:   'Timeline',
   memories: 'Memories',
   search:   'Search',
+  chat:     'Conversation',
 };
 
 function _openPanel(view) {
@@ -214,6 +222,7 @@ function _openPanel(view) {
   if (view === 'events')   renderTimeline();
   if (view === 'memories') renderMemoriesPanel();
   if (view === 'search')   renderSearchPanel();
+  if (view === 'chat')     renderConversationPanel();
 
   requestAnimationFrame(() => {
     panel?.querySelector('button, input, [tabindex="0"]')?.focus();
@@ -279,6 +288,12 @@ function _wireOpenResult() {
   });
 }
 
+// ── Switch view request (from conversation module) ────────────
+
+function _wireSwitchViewRequest() {
+  Bus.on(EVENTS.REQUEST_SWITCH_VIEW, ({ view }) => _switchView(view));
+}
+
 // ── Input Bar ─────────────────────────────────────────────────
 
 function _wireInputBar() {
@@ -289,10 +304,7 @@ function _wireInputBar() {
     const value = input?.value.trim();
     if (!value) return;
     input.value = '';
-    showToast('AI integration coming in Phase 3 — but I heard you!', 'info', 4000);
-    setOrbState('thinking');
-    setTimeout(() => setOrbState('idle'), 2000);
-    logEvent('conversation_attempted', `User said: "${value.slice(0, 80)}${value.length > 80 ? '…' : ''}"`);
+    handleUserMessage(value);
   };
 
   input?.addEventListener('keydown', (e) => {

@@ -68,4 +68,7 @@ export const EVENTS = {
 
   // Awareness (Phase A)
   AWARENESS_CHANGED: 'awareness:changed',
+
+  // Navigation (emitted by modules to request a panel open)
+  REQUEST_SWITCH_VIEW: 'view:switch_request',
 };

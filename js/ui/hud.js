@@ -55,7 +55,6 @@ const R_ACT    = 100;   // activity ring (state behavior)
 
 // Exterior elements
 const R_SCANNER   = 140;   // scanner sweeps just outside glass
-const R_LABELS    = 185;
 const R_PULSE_END = 260;
 
 // ── Scanner speed & alpha per state ──────────────────────────
@@ -277,7 +276,6 @@ function _loop() {
   _rings.act.pulse  = Math.max(0, _rings.act.pulse  - 0.012);
   _updateWaveBars(state);
   _checkIdlePulse();
-  _maybeSpawnFlowPulse(state);
   _checkCuriosity(state);
 
   _ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
@@ -595,10 +593,6 @@ function _spawnFlowPulse() {
   _flowPulses.push({ r: 50, born: Date.now(), dur: 850 + Math.random() * 280 });
 }
 
-function _maybeSpawnFlowPulse(state) {
-  if (state === 'responding' && Math.random() < 0.05) _spawnFlowPulse();
-}
-
 function _drawFlowPulses() {
   const now = Date.now();
   for (let i = _flowPulses.length - 1; i >= 0; i--) {
@@ -691,29 +685,6 @@ function _checkCuriosity(state) {
     setTimeout(() => _spawnPulse(85), 560);
     _curiosityDur = 2200;
   }
-}
-
-// ── Cardinal labels ───────────────────────────────────────────
-
-function _drawCardinalLabels(outerDim) {
-  const a = 0.28 * _awTimeMod * outerDim;
-  if (a < 0.01) return;
-  _ctx.save();
-  _ctx.font          = '9px -apple-system,"Segoe UI",system-ui,sans-serif';
-  _ctx.textBaseline  = 'middle';
-  _ctx.letterSpacing = '0.08em';
-  const positions = [
-    { angle: -HALF_PI, align: 'center', label: `${_noteCount} NOTES` },
-    { angle:  0,       align: 'left',   label: `${_taskPending} PENDING` },
-    { angle:  HALF_PI, align: 'center', label: _getDateLabel() },
-    { angle:  Math.PI, align: 'right',  label: _getUptimeLabel() },
-  ];
-  for (const { angle, align, label } of positions) {
-    _ctx.textAlign = align;
-    _ctx.fillStyle = _rgba(a);
-    _ctx.fillText(label, CX + Math.cos(angle) * R_LABELS, CY + Math.sin(angle) * R_LABELS);
-  }
-  _ctx.restore();
 }
 
 // ── System bar ────────────────────────────────────────────────

@@ -39,6 +39,7 @@ function _render(container, all) {
   };
 
   container.innerHTML = `
+    <p class="mp-intro">Memories are facts NOVA extracts from your notes and tasks automatically. Every note and task you create adds to this store.</p>
     <div class="mp-toolbar">
       <div class="mp-filters" role="tablist" aria-label="Filter memories">
         ${_filterTab('all',    'All',    counts.all)}
@@ -92,11 +93,11 @@ function _renderList(all) {
   if (sorted.length === 0) {
     const msg = _query
       ? `No memories match "<strong>${escHtml(_query)}</strong>"`
-      : 'No memories yet — create notes or tasks to build your memory.';
+      : 'Create your first note or task and it will appear here automatically.';
     return `
       <div class="empty-state">
         <div class="empty-icon" aria-hidden="true">◆</div>
-        <div class="empty-title">No memories</div>
+        <div class="empty-title">${_query ? 'No results' : 'No memories yet'}</div>
         <div class="empty-desc">${msg}</div>
       </div>
     `;

@@ -7,8 +7,7 @@
  * Draw order:
  *   1. Mouse directional glow         — cursor awareness
  *   2. Absorption animations          — information traveling inward (learning)
- *   3. Geometric data paths           — internal thinking structures
- *   4. Memory ring  (R=78)            — inside glass; note count as arc fill
+ *   3. Memory ring  (R=78)            — inside glass; note count as arc fill
  *   5. Task ring    (R=88)            — inside glass; task dots + completion arc
  *   6. Activity ring (R=100)          — inside glass; behavior changes per state
  *   7. Scanner beam  (R=140)          — sweeps outside glass, biased toward cursor
@@ -110,12 +109,6 @@ const _rings = {
 // Wave bars (listening state — 24 radial bars at R_ACT)
 const _waveBars = Array.from({ length: 24 }, () => ({ h: 0 }));
 
-// Geometric data paths (internal thinking structures)
-const _paths      = [];
-const MAX_PATHS   = 2;
-let   _pathBoost  = 0;
-let   _nextPathAt = Date.now() + _randMs(2000, 5000);
-
 // Pulse rings
 const _pulses   = [];
 let   _nextIdle = Date.now() + _randMs(28000, 48000);
@@ -183,7 +176,6 @@ export async function initHud() {
     if (state === 'error') {
       _spawnPulse();
       _rings.act.pulse = 0.5;
-      for (const p of _paths) p.phase = 'out';
     }
     if (state === 'responding') {
       for (let i = 0; i < 4; i++) setTimeout(() => _spawnFlowPulse(), i * 140);
@@ -283,10 +275,6 @@ function _loop() {
   _rings.mem.pulse  = Math.max(0, _rings.mem.pulse  - 0.016);
   _rings.task.pulse = Math.max(0, _rings.task.pulse - 0.016);
   _rings.act.pulse  = Math.max(0, _rings.act.pulse  - 0.012);
-  _pathBoost = Math.max(0, _pathBoost - 0.006);
-
-  _maybeSpawnPath(state);
-  _updatePaths();
   _updateWaveBars(state);
   _checkIdlePulse();
   _maybeSpawnFlowPulse(state);
@@ -294,13 +282,11 @@ function _loop() {
 
   _ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  // Focus: outer dims, inner brightens
-  const outerDim   = 1 - _focusFade * 0.70;
-  const innerBoost = 1 + _focusFade * 0.60;
+  // Focus: outer dims
+  const outerDim = 1 - _focusFade * 0.70;
 
   _drawMouseGlow();
   _drawAbsorptions();
-  _drawPaths(innerBoost);
   _drawMemoryRing(outerDim);
   _drawTaskRing(outerDim);
   _drawActivityRing(outerDim, state);
@@ -388,83 +374,6 @@ function _drawAbsorptions() {
     _ctx.fill();
     _ctx.restore();
   }
-}
-
-// ── Geometric data paths ──────────────────────────────────────
-// Internal lines that form, hold, and dissolve — the thinking feel.
-// State-sensitive: more active when thinking or typing.
-
-function _maybeSpawnPath(state) {
-  if (_paths.length >= MAX_PATHS) return;
-  if (Date.now() < _nextPathAt) return;
-  if (state === 'offline' || state === 'responding' || state === 'success') return;
-
-  const isThinking = state === 'thinking';
-  const peakAlpha  = isThinking ? 0.32 + Math.random() * 0.14
-                   : (0.10 + Math.random() * 0.08) * (1 + _focusFade * 0.7);
-  const holdTime   = isThinking ? 3500 + Math.random() * 6000
-                   : _focusFade > 0.4 ? 5000 + Math.random() * 5000
-                   : 8000 + Math.random() * 12000;
-
-  const ang1 = Math.random() * TWO_PI;
-  const delta = Math.PI * 0.45 + Math.random() * Math.PI * 0.85;
-  const ang2  = ang1 + delta * (Math.random() > 0.5 ? 1 : -1);
-
-  _paths.push({
-    ang1, r1: 44 + Math.random() * 34,
-    ang2, r2: 40 + Math.random() * 36,
-    alpha: 0,
-    peakAlpha: peakAlpha * (1 + _pathBoost * 0.5),
-    phase: 'in', phaseAt: Date.now(),
-    holdTime, fadeIn: 1800, fadeOut: 2400,
-  });
-
-  _nextPathAt = Date.now() + (isThinking ? 1800 + Math.random() * 2500
-    : _focusFade > 0.4 ? 2800 + Math.random() * 3500
-    : 6000 + Math.random() * 10000);
-}
-
-function _updatePaths() {
-  const now = Date.now();
-  for (let i = _paths.length - 1; i >= 0; i--) {
-    const p  = _paths[i];
-    const dt = now - p.phaseAt;
-    if (p.phase === 'in') {
-      p.alpha = Math.min(p.peakAlpha, (dt / p.fadeIn) * p.peakAlpha);
-      if (dt >= p.fadeIn) { p.phase = 'hold'; p.phaseAt = now; }
-    } else if (p.phase === 'hold') {
-      if (dt >= p.holdTime) { p.phase = 'out'; p.phaseAt = now; }
-    } else {
-      p.alpha = Math.max(0, p.peakAlpha * (1 - dt / p.fadeOut));
-      if (p.alpha <= 0) _paths.splice(i, 1);
-    }
-  }
-}
-
-function _drawPaths(innerBoost) {
-  if (!_paths.length) return;
-  const mul = _awTimeMod * _awIdleMul * innerBoost
-    * (_hoverZone === 1 ? 1.8 : _hoverZone === 2 ? 1.3 : 1);
-  _ctx.save();
-  _ctx.lineCap = 'round';
-  for (const p of _paths) {
-    const a = p.alpha * mul;
-    if (a < 0.004) continue;
-    const x1 = CX + Math.cos(p.ang1) * p.r1;
-    const y1 = CY + Math.sin(p.ang1) * p.r1;
-    const x2 = CX + Math.cos(p.ang2) * p.r2;
-    const y2 = CY + Math.sin(p.ang2) * p.r2;
-    _ctx.beginPath();
-    _ctx.moveTo(x1, y1);
-    _ctx.lineTo(x2, y2);
-    _ctx.strokeStyle = _rgba(a);
-    _ctx.lineWidth   = 0.8;
-    _ctx.stroke();
-    _ctx.fillStyle = _rgba(Math.min(1, a * 2.8));
-    _ctx.beginPath(); _ctx.arc(x1, y1, 1.5, 0, TWO_PI); _ctx.fill();
-    _ctx.beginPath(); _ctx.arc(x2, y2, 1.5, 0, TWO_PI); _ctx.fill();
-  }
-  _ctx.restore();
 }
 
 // ── Memory ring (R=78) ────────────────────────────────────────
@@ -769,9 +678,9 @@ function _checkCuriosity(state) {
   _curiosityAt     = Date.now() + _randMs(45000, 90000);
 
   if (_curiosityType === 0) {
-    // Reconfiguration: clear existing paths, let new ones form
-    for (const p of _paths) p.phase = 'out';
-    _nextPathAt = Date.now() + 1400;
+    // Reconfiguration: internal pulse from core outward
+    _spawnPulse(30);
+    setTimeout(() => _spawnPulse(55), 350);
     _curiosityDur = 6000;
   } else if (_curiosityType === 1) {
     // Scanner override: reverse direction for ~3.5 seconds

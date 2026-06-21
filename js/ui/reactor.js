@@ -146,7 +146,361 @@ const _geoGaps = _GEO.map(g =>
   Array.from({ length: g.segs }, () => g.gapF * (0.70 + Math.random() * 0.60))
 );
 
-// (Arc fragments removed — were decorative random-drift arcs)
+// ─────────────────────────────────────────────────────────────
+// Internal Neural Network
+// Nodes, edges, signals, and analysis traces inside the
+// containment ring. Everything has a purpose:
+//
+//   Node   — a processing point in NOVA's thought-space
+//   Edge   — an active route between nodes (temporary, lifecycle: in→hold→out)
+//   Signal — data packet traveling an active route
+//   Trace  — brief analysis scan line (thinking state only)
+//
+// State behavior:
+//   idle      → 4 nodes, 1 edge max, rare signals, slow drift
+//   listening → 5 nodes cluster toward cursor, inward signal bias
+//   thinking  → 7 nodes, 4 edges, rapid signals, analysis traces appear
+//   responding→ 5 nodes, 3 edges, outward signal bias
+//   success   → all connections briefly illuminate simultaneously
+//   error     → nodes scatter, edges break, then slowly reform
+// ─────────────────────────────────────────────────────────────
+
+const NET_CFG = {
+  offline:    { nodes: 0, maxEdges: 0, maxSigs: 0, traceHz: 0.000, edgeRate: 0.000 },
+  idle:       { nodes: 4, maxEdges: 1, maxSigs: 1, traceHz: 0.000, edgeRate: 0.002 },
+  listening:  { nodes: 5, maxEdges: 2, maxSigs: 2, traceHz: 0.000, edgeRate: 0.004 },
+  thinking:   { nodes: 7, maxEdges: 4, maxSigs: 4, traceHz: 0.020, edgeRate: 0.010 },
+  responding: { nodes: 5, maxEdges: 3, maxSigs: 3, traceHz: 0.000, edgeRate: 0.006 },
+  success:    { nodes: 5, maxEdges: 5, maxSigs: 0, traceHz: 0.000, edgeRate: 0.000 },
+  error:      { nodes: 3, maxEdges: 0, maxSigs: 0, traceHz: 0.000, edgeRate: 0.000 },
+};
+
+let _netNodes    = [];
+let _netEdges    = [];
+let _netSigs     = [];
+let _netTraces   = [];
+let _netPrevState = '';
+let _netReady    = false;
+let _netCuriousAt = Date.now() + _rnd(55000, 110000);
+
+function _makeNode() {
+  return {
+    ang:       Math.random() * Math.PI * 2,
+    r:         0.07 + Math.random() * 0.17,     // fraction of canvas w; 0.07–0.24
+    dAng:      (Math.random() - 0.5) * 0.00022, // ~1.3°/s max angular drift
+    dr:        (Math.random() - 0.5) * 0.00008, // very slow radial drift
+    targetAng: null,
+    targetR:   null,
+    bright:    0,   // 0→1, brief spike when signal arrives, decays each frame
+  };
+}
+
+function _initNet() {
+  _netNodes = Array.from({ length: 4 }, _makeNode);
+  _netEdges = []; _netSigs = []; _netTraces = [];
+}
+
+// Update logic: node drift, edge lifecycle, signal travel, trace spawn
+function _updateNet(cx, cy, w, state, spd) {
+  const cfg = NET_CFG[state] ?? NET_CFG.idle;
+
+  // ── Adjust node count to match state ─────────────────────
+  while (_netNodes.length < cfg.nodes) _netNodes.push(_makeNode());
+  // Only remove a node that isn't anchoring any active edge
+  while (_netNodes.length > cfg.nodes) {
+    const idx = _netNodes.findIndex((_, i) =>
+      !_netEdges.some(e => e.a === i || e.b === i)
+    );
+    if (idx < 0) break; // can't safely remove — wait for edges to dissolve
+    _netNodes.splice(idx, 1);
+    // Remap edge indices above the removed node
+    _netEdges = _netEdges
+      .filter(e => e.a !== idx && e.b !== idx)
+      .map(e => ({
+        ...e,
+        a: e.a > idx ? e.a - 1 : e.a,
+        b: e.b > idx ? e.b - 1 : e.b,
+      }));
+    _netSigs = _netSigs.filter(s => s.a !== idx && s.b !== idx)
+      .map(s => ({
+        ...s,
+        a: s.a > idx ? s.a - 1 : s.a,
+        b: s.b > idx ? s.b - 1 : s.b,
+      }));
+  }
+
+  // ── Move nodes ────────────────────────────────────────────
+  for (const n of _netNodes) {
+    if (n.targetAng !== null) {
+      // Deliberate relocation (curiosity / state transition)
+      const dA = ((n.targetAng - n.ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      n.ang += dA * 0.006;
+      n.r   += (n.targetR - n.r) * 0.006;
+      if (Math.abs(dA) < 0.015 && Math.abs(n.targetR - n.r) < 0.002) {
+        n.targetAng = null; n.targetR = null;
+      }
+    } else {
+      n.ang += n.dAng * spd;
+      n.r   += n.dr   * spd;
+    }
+    // Listening: pull nodes gently toward cursor angle, slightly inward
+    if (state === 'listening' && (_curNX !== 0 || _curNY !== 0)) {
+      const curA = Math.atan2(_curNY, _curNX);
+      const diff = ((curA - n.ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      n.ang += diff * 0.0010;
+      n.r   += (0.09 - n.r) * 0.0008;
+    }
+    // Error: nodes scatter
+    if (state === 'error' && _netPrevState !== 'error') {
+      n.dAng = (Math.random() - 0.5) * 0.006;
+      n.dr   = (Math.random() - 0.5) * 0.003;
+    }
+    n.r = Math.max(0.06, Math.min(0.25, n.r));
+  }
+
+  // Brightness decay every frame
+  for (const n of _netNodes) n.bright = Math.max(0, n.bright - 0.022);
+
+  // ── Idle curiosity: spontaneous node relocation ───────────
+  if (Date.now() > _netCuriousAt && state === 'idle') {
+    _netCuriousAt = Date.now() + _rnd(55000, 110000);
+    const n = _netNodes[Math.floor(Math.random() * _netNodes.length)];
+    if (n) { n.targetAng = Math.random() * Math.PI * 2; n.targetR = 0.07 + Math.random() * 0.17; }
+  }
+
+  // ── Success: briefly illuminate ALL connections ───────────
+  if (state === 'success' && _netPrevState !== 'success') {
+    _netEdges.forEach(e => { e.phase = 'out'; e.phaseAt = Date.now(); });
+    // Form a quick full-mesh set of short edges
+    for (let i = 0; i < _netNodes.length - 1; i++) {
+      _netEdges.push({
+        a: i, b: i + 1,
+        alpha: 1, phase: 'hold', phaseAt: Date.now(),
+        dur: 900, fadeIn: 200, fadeOut: 700, hasSentSignal: true,
+      });
+    }
+    // Also pulse node brightness
+    for (const n of _netNodes) n.bright = 0.9;
+  }
+
+  // ── Error: drop all edges ─────────────────────────────────
+  if (state === 'error' && _netPrevState !== 'error') {
+    for (const e of _netEdges) { e.phase = 'out'; e.phaseAt = Date.now(); }
+  }
+
+  _netPrevState = state;
+
+  // ── Update edge lifecycle ─────────────────────────────────
+  const now = Date.now();
+  for (let i = _netEdges.length - 1; i >= 0; i--) {
+    const e  = _netEdges[i];
+    // Guard: if a node was removed mid-frame, drop the edge
+    if (!_netNodes[e.a] || !_netNodes[e.b]) { _netEdges.splice(i, 1); continue; }
+    const dt = now - e.phaseAt;
+    if (e.phase === 'in') {
+      e.alpha = Math.min(1, dt / e.fadeIn);
+      if (dt >= e.fadeIn) { e.phase = 'hold'; e.phaseAt = now; }
+      // Spawn the first signal once the edge is half-visible
+      if (!e.hasSentSignal && e.alpha > 0.45) {
+        e.hasSentSignal = true;
+        if (_netSigs.length < cfg.maxSigs) {
+          // Listening: prefer inward (high-r → low-r). Responding: outward.
+          const ni = _netNodes[e.a], nj = _netNodes[e.b];
+          const fromA = state === 'listening' ? (ni.r >= nj.r) :
+                        state === 'responding' ? (ni.r <= nj.r) :
+                        (Math.random() < 0.5);
+          _netSigs.push({
+            a: fromA ? e.a : e.b,
+            b: fromA ? e.b : e.a,
+            t: 0,
+            speed: 0.007 + Math.random() * 0.009,
+          });
+        }
+      }
+    } else if (e.phase === 'hold') {
+      if (dt >= e.dur) { e.phase = 'out'; e.phaseAt = now; }
+    } else {
+      e.alpha = Math.max(0, 1 - dt / e.fadeOut);
+      if (e.alpha <= 0) { _netEdges.splice(i, 1); }
+    }
+  }
+
+  // ── Update signals ────────────────────────────────────────
+  const sigSpeedMod = state === 'responding' ? 1.55 : state === 'thinking' ? 1.05 : 0.75;
+  for (let i = _netSigs.length - 1; i >= 0; i--) {
+    const s = _netSigs[i];
+    if (!_netNodes[s.a] || !_netNodes[s.b]) { _netSigs.splice(i, 1); continue; }
+    s.t += s.speed * sigSpeedMod * spd;
+    if (s.t >= 1) {
+      const dest = _netNodes[s.b];
+      if (dest) dest.bright = Math.min(1, dest.bright + 0.80);
+      _netSigs.splice(i, 1);
+      // Chain signal from destination along another edge (thinking: 40%, others: 18%)
+      const chainChance = state === 'thinking' ? 0.40 : 0.18;
+      if (Math.random() < chainChance && _netSigs.length < cfg.maxSigs) {
+        const nextEdge = _netEdges.find(
+          e => (e.a === s.b || e.b === s.b) && e.phase === 'hold'
+        );
+        if (nextEdge) {
+          const fromA = nextEdge.a === s.b;
+          _netSigs.push({
+            a: fromA ? nextEdge.a : nextEdge.b,
+            b: fromA ? nextEdge.b : nextEdge.a,
+            t: 0, speed: 0.007 + Math.random() * 0.009,
+          });
+        }
+      }
+    }
+  }
+
+  // ── Spawn new edges ───────────────────────────────────────
+  if (_netEdges.length < cfg.maxEdges && _netNodes.length >= 2 && Math.random() < cfg.edgeRate) {
+    const connected = new Set(
+      _netEdges.map(e => `${Math.min(e.a, e.b)}-${Math.max(e.a, e.b)}`)
+    );
+    let bestPair = null, bestDist = Infinity;
+    for (let i = 0; i < _netNodes.length; i++) {
+      for (let j = i + 1; j < _netNodes.length; j++) {
+        if (connected.has(`${i}-${j}`)) continue;
+        const ni = _netNodes[i], nj = _netNodes[j];
+        const xi = cx + Math.cos(ni.ang) * ni.r * w;
+        const yi = cy + Math.sin(ni.ang) * ni.r * w;
+        const xj = cx + Math.cos(nj.ang) * nj.r * w;
+        const yj = cy + Math.sin(nj.ang) * nj.r * w;
+        const d  = Math.hypot(xi - xj, yi - yj);
+        if (d < 0.34 * w && d < bestDist) { bestDist = d; bestPair = [i, j]; }
+      }
+    }
+    if (bestPair) {
+      _netEdges.push({
+        a: bestPair[0], b: bestPair[1],
+        alpha: 0, phase: 'in', phaseAt: now,
+        dur: 2000 + Math.random() * 4000,
+        fadeIn: 500, fadeOut: 700, hasSentSignal: false,
+      });
+    }
+  }
+
+  // ── Analysis traces (thinking state only) ────────────────
+  if (state === 'thinking' && _netTraces.length < 3 && Math.random() < cfg.traceHz) {
+    const ang1 = Math.random() * Math.PI * 2;
+    const ang2 = ang1 + (0.3 + Math.random() * 0.9) * (Math.random() > 0.5 ? 1 : -1);
+    const r1   = (0.04 + Math.random() * 0.22) * w;
+    const r2   = (0.05 + Math.random() * 0.22) * w;
+    _netTraces.push({
+      x1: cx + Math.cos(ang1) * r1, y1: cy + Math.sin(ang1) * r1,
+      x2: cx + Math.cos(ang2) * r2, y2: cy + Math.sin(ang2) * r2,
+      born: now,
+      dur:     380 + Math.random() * 580,
+      fadeIn:  90,
+      fadeOut: 220,
+      peakA:   0.10 + Math.random() * 0.08,
+    });
+  }
+  for (let i = _netTraces.length - 1; i >= 0; i--) {
+    const tr = _netTraces[i];
+    const dt = now - tr.born;
+    if (dt >= tr.dur) { _netTraces.splice(i, 1); continue; }
+    tr.alpha = tr.peakA * (
+      dt < tr.fadeIn    ? dt / tr.fadeIn :
+      dt > tr.dur - tr.fadeOut ? (tr.dur - dt) / tr.fadeOut :
+      1
+    );
+  }
+}
+
+// Draw: traces → edges → signals → nodes
+function _drawNet(cx, cy, w, state, timeMod) {
+  if (!_netNodes.length && !_netTraces.length) return;
+  _ctx.save();
+  _ctx.lineCap = 'round';
+
+  // Analysis traces — brief scan lines during thinking
+  for (const tr of _netTraces) {
+    const a = (tr.alpha ?? 0) * timeMod;
+    if (a < 0.004) continue;
+    _ctx.beginPath();
+    _ctx.moveTo(tr.x1, tr.y1);
+    _ctx.lineTo(tr.x2, tr.y2);
+    _ctx.strokeStyle = _c(a);
+    _ctx.lineWidth   = 0.55;
+    _ctx.stroke();
+  }
+
+  // Edges — thin routes between nodes
+  for (const e of _netEdges) {
+    const ni = _netNodes[e.a], nj = _netNodes[e.b];
+    if (!ni || !nj) continue;
+    const xi = cx + Math.cos(ni.ang) * ni.r * w;
+    const yi = cy + Math.sin(ni.ang) * ni.r * w;
+    const xj = cx + Math.cos(nj.ang) * nj.r * w;
+    const yj = cy + Math.sin(nj.ang) * nj.r * w;
+    const a  = e.alpha * 0.24 * timeMod;
+    if (a < 0.003) continue;
+    _ctx.beginPath();
+    _ctx.moveTo(xi, yi);
+    _ctx.lineTo(xj, yj);
+    _ctx.strokeStyle = _c(a);
+    _ctx.lineWidth   = 0.65;
+    _ctx.stroke();
+  }
+
+  // Signals — data packets traveling edges with a short trail
+  for (const s of _netSigs) {
+    const ni = _netNodes[s.a], nj = _netNodes[s.b];
+    if (!ni || !nj) continue;
+    const xi  = cx + Math.cos(ni.ang) * ni.r * w;
+    const yi  = cy + Math.sin(ni.ang) * ni.r * w;
+    const xj  = cx + Math.cos(nj.ang) * nj.r * w;
+    const yj  = cy + Math.sin(nj.ang) * nj.r * w;
+    const px  = xi + (xj - xi) * s.t;
+    const py  = yi + (yj - yi) * s.t;
+    const t0  = Math.max(0, s.t - 0.22);
+    const tpx = xi + (xj - xi) * t0;
+    const tpy = yi + (yj - yi) * t0;
+    // Fading trail
+    if (Math.hypot(px - tpx, py - tpy) > 0.5) {
+      const g = _ctx.createLinearGradient(tpx, tpy, px, py);
+      g.addColorStop(0, _c(0));
+      g.addColorStop(1, _c(0.52 * timeMod));
+      _ctx.beginPath();
+      _ctx.moveTo(tpx, tpy);
+      _ctx.lineTo(px, py);
+      _ctx.strokeStyle = g;
+      _ctx.lineWidth   = 0.9;
+      _ctx.stroke();
+    }
+    // Signal head
+    _ctx.beginPath();
+    _ctx.arc(px, py, 1.8, 0, Math.PI * 2);
+    _ctx.fillStyle = _c(0.78 * timeMod);
+    _ctx.fill();
+  }
+
+  // Nodes — small stationary dots with brightness glow on signal arrival
+  for (const n of _netNodes) {
+    const nx = cx + Math.cos(n.ang) * n.r * w;
+    const ny = cy + Math.sin(n.ang) * n.r * w;
+    const a  = (0.32 + n.bright * 0.52) * timeMod;
+    if (a < 0.02) continue;
+    _ctx.beginPath();
+    _ctx.arc(nx, ny, 1.6, 0, Math.PI * 2);
+    _ctx.fillStyle = _c(a);
+    _ctx.fill();
+    // Soft halo when signaled
+    if (n.bright > 0.12) {
+      const g = _ctx.createRadialGradient(nx, ny, 0, nx, ny, 4.5);
+      g.addColorStop(0, _c(n.bright * 0.38 * timeMod));
+      g.addColorStop(1, _c(0));
+      _ctx.beginPath();
+      _ctx.arc(nx, ny, 4.5, 0, Math.PI * 2);
+      _ctx.fillStyle = g;
+      _ctx.fill();
+    }
+  }
+
+  _ctx.restore();
+}
 
 // ─────────────────────────────────────────────────────────────
 // Containment ring  (Phase 4 — primary structural bright ring)
@@ -188,6 +542,8 @@ export function initReactor() {
   _readColor();
   Bus.on(EVENTS.THEME_CHANGED, () => requestAnimationFrame(_readColor));
   Bus.on(EVENTS.AWARENESS_CHANGED, ({ idleLevel }) => { _awIdleLevel = idleLevel; });
+
+  _initNet();
 
   if (_reduced) {
     _drawStatic();
@@ -372,7 +728,7 @@ function _loop() {
     _ctx.save();
     _ctx.lineCap = 'round';
     for (let i = 0; i < count; i++) {
-      const ang   = (i / count) * TWO_PI + _bladeAngA * 0.18 + s2 * 0.035;
+      const ang   = (i / count) * TWO_PI + _innerAng * 0.10 + s2 * 0.035;
       const pulse = (Math.sin(_t * 0.034 + i * 1.22) + 1) * 0.5;
       const a     = (0.055 + _energy * 0.090 + pulse * 0.055) * timeMod;
       const x1 = cx + Math.cos(ang) * rIn;
@@ -393,6 +749,16 @@ function _loop() {
     }
     _ctx.restore();
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LAYER 2.5 — Internal neural network
+  // Nodes drift slowly inside containment ring. Edges form between
+  // nearby nodes, carry signals, then dissolve. Analysis traces
+  // flash during thinking. Nothing rotates forever — everything
+  // appears, performs a task, and disappears.
+  // ═══════════════════════════════════════════════════════════════
+  _updateNet(cx, cy, w, state, spd);
+  _drawNet(cx, cy, w, state, timeMod);
 
   // ═══════════════════════════════════════════════════════════════
   // LAYER 3 — Inner geometry ring  (R_INNER, fast CW, 4 segments)

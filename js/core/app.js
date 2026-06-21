@@ -25,7 +25,7 @@ import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
 import { renderSearchPanel }           from '../modules/search-panel.js';
 import { renderMemoriesPanel }         from '../modules/memories-panel.js';
 import { renderTimeline }              from '../modules/timeline.js';
-import { initConversation, handleUserMessage, renderConversationPanel, isBusy } from '../modules/conversation.js';
+import { initConversation, handleUserMessage, renderConversationPanel, isBusy, generateDailyBriefing } from '../modules/conversation.js';
 import { setGeminiKey, getGeminiKey } from '../services/gemini.js';
 import { initOnboarding }              from '../ui/onboarding.js';
 import { initStarfield }               from '../ui/starfield.js';
@@ -125,6 +125,9 @@ async function boot() {
 
     // 13. First-run onboarding (after orb is idle so it doesn't interrupt boot)
     await initOnboarding();
+
+    // 14. Daily briefing — runs once per day, injects morning context into chat
+    generateDailyBriefing().catch(e => console.warn('[Briefing]', e.message));
 
   } catch (err) {
     console.error('[NOVA] Boot failed:', err);

@@ -229,8 +229,8 @@
 }
 
 @keyframes glow-breathe {
-  0%, 100% { opacity: 0.75; transform: scale(1);    }
-  50%       { opacity: 1;    transform: scale(1.08); }
+  0%, 100% { opacity: 0.52; transform: scale(1);    }
+  50%       { opacity: 0.78; transform: scale(1.08); }
 }
 
 @keyframes field-breathe {

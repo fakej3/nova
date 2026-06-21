@@ -591,11 +591,12 @@ function _c(a) {
 }
 
 // White-hot version: shifts color toward white (for nucleus core)
+// High shift factors keep the nucleus distinctly whiter than surrounding cyan layers.
 function _hot(a) {
   const [r, g, b] = _colorRgb.split(',').map(Number);
-  const rh = Math.round(r + (255 - r) * 0.60);
-  const gh = Math.round(g + (255 - g) * 0.58);
-  const bh = Math.round(b + (255 - b) * 0.38);
+  const rh = Math.round(r + (255 - r) * 0.82);
+  const gh = Math.round(g + (255 - g) * 0.80);
+  const bh = Math.round(b + (255 - b) * 0.60);
   return `rgba(${rh},${gh},${bh},${_clamp(a).toFixed(3)})`;
 }
 
@@ -695,8 +696,8 @@ function _loop() {
   {
     const a = (0.085 + _energy * 0.065 + s1 * 0.012) * timeMod;
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, w * R_ATM);
-    g.addColorStop(0,    _hot(a * 3.2));
-    g.addColorStop(0.22, _c(a * 1.8));
+    g.addColorStop(0,    _hot(a * 2.0));
+    g.addColorStop(0.22, _c(a * 1.5));
     g.addColorStop(0.55, _cool(a * 0.7));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
@@ -722,11 +723,11 @@ function _loop() {
       const by  = cy + Math.sin(ang) * rFr * w;
       const br  = p.size * w * (1 + tp * 0.30);
       // Base alpha: always visible floor + energy bonus
-      const ba  = (0.055 + _energy * 0.12) * timeMod
+      const ba  = (0.042 + _energy * 0.10) * timeMod
         + (_surgeType === 2 ? sl * 0.18 : 0);   // surge type 2: plasma instability
 
       const g = _ctx.createRadialGradient(bx, by, 0, bx, by, br);
-      g.addColorStop(0,    _c(_clamp(ba * 1.6)));
+      g.addColorStop(0,    _c(_clamp(ba * 1.2)));
       g.addColorStop(0.38, _c(ba));
       g.addColorStop(1,    _c(0));
       _ctx.fillStyle = g;
@@ -844,12 +845,12 @@ function _loop() {
     const offX  = cx + (s1 * 0.018 + s3 * 0.010 + _curNX * 0.065) * w;
     const offY  = cy + (s2 * 0.015 + s4 * 0.008 + _curNY * 0.065) * w;
     const chamR = w * (0.195 + tp * 0.065 + (_surgeType === 0 ? sl * 0.070 : 0));
-    const chamA = (0.085 + _energy * 0.090 + tp * 0.080) * timeMod
+    const chamA = (0.065 + _energy * 0.072 + tp * 0.080) * timeMod
       + (_surgeType === 0 ? sl * 0.14 : 0);   // internal flare
 
     const g = _ctx.createRadialGradient(offX, offY, 0, offX, offY, chamR);
-    g.addColorStop(0,    _c(chamA * 2.6));
-    g.addColorStop(0.30, _c(chamA * 1.4));
+    g.addColorStop(0,    _c(chamA * 1.6));
+    g.addColorStop(0.30, _c(chamA * 1.1));
     g.addColorStop(0.65, _c(chamA * 0.4));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
@@ -868,15 +869,15 @@ function _loop() {
     const nucScale = 1 - tp * 0.25;
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const hazeR = w * R_NUC_HZ * nucScale;
-    const hazeA = (0.10 + _energy * 0.09 + surgeNuc * 0.06) * timeMod;
+    const hazeA = (0.055 + _energy * 0.055 + surgeNuc * 0.06) * timeMod;
     // Subtle cursor lean on the haze center
     const hazeX = cx + _curNX * 0.032 * w;
     const hazeY = cy + _curNY * 0.032 * w;
 
     const g = _ctx.createRadialGradient(hazeX, hazeY, 0, hazeX, hazeY, hazeR);
-    g.addColorStop(0,    _c(hazeA * 2.4));
-    g.addColorStop(0.40, _c(hazeA * 1.1));
-    g.addColorStop(0.75, _c(hazeA * 0.3));
+    g.addColorStop(0,    _c(hazeA * 1.6));
+    g.addColorStop(0.40, _c(hazeA * 0.9));
+    g.addColorStop(0.75, _c(hazeA * 0.25));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
     _ctx.beginPath();
@@ -895,12 +896,13 @@ function _loop() {
     const nucScale = 1 - _thinkP * 0.25;
     const surgeNuc = (_surgeType === 0) ? sl : 0;
     const igR = w * R_NUC_IG * nucScale * (1 + s1 * 0.08);
-    const igA = (0.34 + _energy * 0.22 + surgeNuc * 0.16) * timeMod;
+    const igA = (0.26 + _energy * 0.18 + surgeNuc * 0.16) * timeMod;
 
     const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, igR);
-    g.addColorStop(0,    _hot(igA));
-    g.addColorStop(0.25, _c(igA * 0.95));
-    g.addColorStop(0.60, _c(igA * 0.38));
+    g.addColorStop(0,    _hot(igA * 0.55));
+    g.addColorStop(0.20, _hot(igA));
+    g.addColorStop(0.50, _c(igA * 0.65));
+    g.addColorStop(0.82, _c(igA * 0.18));
     g.addColorStop(1,    _c(0));
     _ctx.fillStyle = g;
     _ctx.beginPath();
@@ -921,13 +923,13 @@ function _loop() {
     const surgeNuc = (_surgeType === 0) ? sl * 0.9 : 0;
     const pulse    = s5 * 0.5 + 0.5;   // 0–1, fast pulse for nucleus flicker
 
-    // Outer ring of the nucleus
+    // Outer ring of the nucleus — brighter to establish hierarchy
     const ringR = w * R_NUC_PT * nucScale * (1.8 + pulse * 0.25);
-    const ringA = (0.86 + _energy * 0.22 + surgeNuc * 0.20) * timeMod;
+    const ringA = (0.92 + _energy * 0.24 + surgeNuc * 0.20) * timeMod;
     {
       const g = _ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR);
       g.addColorStop(0,    _hot(ringA));
-      g.addColorStop(0.45, _c(ringA * 0.50));
+      g.addColorStop(0.40, _c(ringA * 0.55));
       g.addColorStop(1,    _c(0));
       _ctx.fillStyle = g;
       _ctx.beginPath();
@@ -936,16 +938,17 @@ function _loop() {
     }
 
     // Hard white-hot center dot
-    const ptR = w * R_NUC_PT * nucScale * (0.6 + pulse * 0.12);
+    const ptR = w * R_NUC_PT * nucScale * (0.65 + pulse * 0.12);
     _ctx.beginPath();
     _ctx.arc(cx, cy, ptR, 0, TWO_PI);
-    _ctx.fillStyle = _hot(_clamp(0.94 + surgeNuc * 0.06));
+    _ctx.fillStyle = _hot(_clamp(0.97 + surgeNuc * 0.03));
     _ctx.fill();
     // Pure white core — absolute brightest point in the interface
-    const coreR = w * R_NUC_PT * nucScale * 0.28;
+    // Larger radius so it reads clearly as a focal point
+    const coreR = w * R_NUC_PT * nucScale * 0.42;
     _ctx.beginPath();
     _ctx.arc(cx, cy, coreR, 0, TWO_PI);
-    _ctx.fillStyle = `rgba(255,255,255,${_clamp(0.92 + surgeNuc * 0.08).toFixed(3)})`;
+    _ctx.fillStyle = `rgba(255,255,255,${_clamp(0.96 + surgeNuc * 0.04).toFixed(3)})`;
     _ctx.fill();
     _ctx.restore();
   }

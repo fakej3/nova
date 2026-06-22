@@ -1,36 +1,29 @@
 /**
- * NOVA Conversation System v3
+ * NOVA Conversation System v4
  *
- * New in v3:
- *   Feature 1 — Daily briefing: auto-generated on first open each day, injected as
- *               the first NOVA message, powered by Gemini or a local data-aware builder.
- *   Feature 2 — Semantic memory retrieval: before every Gemini call, keywords are
- *               extracted from the user's message and matched against all stored memories.
- *               The most relevant (highest keyword-overlap score) are sent, not just the
- *               most recent. Falls back to recent when no keywords match.
- *   Feature 3 — Session memory: when the user navigates away from chat (VIEW_CHANGED
- *               to anything other than 'chat'), the session is summarized and stored as
- *               a 'session_summary' memory. Future system prompts include recent summaries
- *               so NOVA can reference previous conversations.
+ * v4 — Response engine upgrade:
+ *   - Full NOVA persona: direct, aware, personal — not a generic AI assistant
+ *   - Offline intelligence: task analysis, memory patterns, priorities, recommendations
+ *   - Context awareness: time of day, overdue tasks, streak, recurring topics
+ *   - Natural continuity language: "Last week you mentioned…" not "I found in memory…"
+ *   - Rich Gemini system prompt with progress + pattern data
  *
- * Routes messages through:
- *   1. Local fast intents (clear, time, date, note:, task:)
- *   2. Gemini API when key is configured
- *   3. Local data-aware fallback (no key / offline)
+ * Message routing (unchanged):
+ *   1. Local fast intents  (clear, time, date, note:, task:)
+ *   2. Gemini API          (when key configured)
+ *   3. Offline intelligence (no key / offline)
  *
- * Gemini responses may contain action markers parsed silently before display:
- *   [SAVE_MEMORY: "content"]
- *   [CREATE_TASK: "title"]
- *   [CREATE_NOTE: "title | content"]
- *   [COMPLETE_TASK: "title substring or id"]
+ * Action markers (Gemini only):
+ *   [SAVE_MEMORY: "…"]  [CREATE_TASK: "…"]
+ *   [CREATE_NOTE: "title | content"]  [COMPLETE_TASK: "id or title"]
  */
 
-import { DB }                     from '../core/db.js';
-import { Bus, EVENTS }            from '../core/bus.js';
-import { State }                  from '../core/state.js';
-import { setOrbState }            from '../ui/orb.js';
-import { showToast }              from '../ui/toast.js';
-import { logEvent, EVENT_TYPES }  from '../services/events.js';
+import { DB }                       from '../core/db.js';
+import { Bus, EVENTS }              from '../core/bus.js';
+import { State }                    from '../core/state.js';
+import { setOrbState }              from '../ui/orb.js';
+import { showToast }                from '../ui/toast.js';
+import { logEvent, EVENT_TYPES }    from '../services/events.js';
 import { callGemini, hasGeminiKey } from '../services/gemini.js';
 
 const MAX_HISTORY      = 100;
@@ -43,7 +36,7 @@ let _busy             = false;
 let _summarizing      = false;
 let _lastSummaryIndex = 0;
 
-// ── Stop words (Feature 2) ────────────────────────────────────
+// ── Keyword stop-words ────────────────────────────────────────
 
 const STOP_WORDS = new Set([
   'i','me','my','myself','we','our','ours','you','your','yours','he','him',
@@ -68,29 +61,162 @@ export function initConversation() {
   try {
     const idx = localStorage.getItem(LS_SESSION_INDEX);
     _lastSummaryIndex = idx ? parseInt(idx, 10) : 0;
-    // Guard against stale index (e.g. after MAX_HISTORY trim)
     if (_lastSummaryIndex > _messages.length) {
       _lastSummaryIndex = Math.max(0, _messages.length - 5);
     }
   } catch { _lastSummaryIndex = 0; }
 
-  // Feature 3: when user navigates away from chat, summarise the session
   Bus.on(EVENTS.VIEW_CHANGED, ({ view } = {}) => {
     if (view !== 'chat') {
       _maybeGenerateSessionSummary().catch(e =>
-        console.warn('[Session] Summary error:', e.message)
+        console.warn('[Session]', e.message)
       );
     }
   });
 }
 
-export function isBusy() { return _busy; }
+export function isBusy()  { return _busy; }
 
 export function clearConversation() {
   _messages         = [];
   _lastSummaryIndex = 0;
   _saveHistory();
   try { localStorage.removeItem(LS_SESSION_INDEX); } catch {}
+}
+
+// ── Utility: time + relative language ────────────────────────
+
+function _timeContext() {
+  const h = new Date().getHours();
+  if (h < 6)  return 'late night';
+  if (h < 12) return 'morning';
+  if (h < 14) return 'midday';
+  if (h < 18) return 'afternoon';
+  if (h < 22) return 'evening';
+  return 'late night';
+}
+
+function _relativeTime(isoStr) {
+  if (!isoStr) return 'recently';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (diff < 3600000)  return 'earlier today';
+  if (days === 0)      return 'earlier today';
+  if (days === 1)      return 'yesterday';
+  if (days < 7)        return `${days} days ago`;
+  if (days < 14)       return 'last week';
+  if (days < 30)       return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
+function _taskAge(task) {
+  const days = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 86400000);
+  if (days === 0) return 'added today';
+  if (days === 1) return '1 day old';
+  return `${days} days old`;
+}
+
+// ── Utility: pattern detection ────────────────────────────────
+
+function _detectRecurringTopics(memories, minCount = 2) {
+  const freq    = {};
+  const lastTs  = {};
+  const skip    = new Set([
+    'the','and','for','that','this','with','have','from','about','been',
+    'they','will','your','what','when','user','nova','just','also','more',
+    'some','into','than','then','were','said','like','even','well','back',
+    'would','could','should','task','note','memory','mentioned','session',
+  ]);
+
+  for (const m of memories) {
+    if (m.type === 'session_summary') continue;
+    const words = m.content.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 3 && !skip.has(w));
+
+    for (const w of new Set(words)) {
+      freq[w]   = (freq[w]   || 0) + 1;
+      if (!lastTs[w] || m.timestamp > lastTs[w]) lastTs[w] = m.timestamp;
+    }
+  }
+
+  return Object.entries(freq)
+    .filter(([, c]) => c >= minCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([topic, count]) => ({ topic, count, lastMentioned: lastTs[topic] }));
+}
+
+function _computeStreak(completedTasks) {
+  const dates = [...new Set(
+    completedTasks
+      .filter(t => t.completedAt)
+      .map(t => new Date(t.completedAt).toDateString()),
+  )].sort((a, b) => new Date(a) - new Date(b));
+
+  if (!dates.length) return 0;
+
+  const today     = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  const last      = dates[dates.length - 1];
+  if (last !== today && last !== yesterday) return 0;
+
+  let streak = 1;
+  for (let i = dates.length - 2; i >= 0; i--) {
+    const gap = (new Date(dates[i + 1]) - new Date(dates[i])) / 86400000;
+    if (gap === 1) streak++;
+    else break;
+  }
+  return streak;
+}
+
+// ── Shared data loader (used by offline functions) ────────────
+
+async function _loadUserData() {
+  const [allTasks, allNotes, allMems] = await Promise.all([
+    DB.tasks.getAll(),
+    DB.notes.getAll(),
+    DB.memories.getAll(),
+  ]);
+
+  const now        = new Date();
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const weekAgo    = new Date(now - 7 * 86400000);
+
+  const pending   = allTasks.filter(t => t.status === 'pending');
+  const completed = allTasks.filter(t => t.status === 'completed');
+  const overdue   = pending.filter(t => t.dueDate && new Date(t.dueDate) < todayStart);
+  const dueToday  = pending.filter(t => {
+    if (!t.dueDate) return false;
+    const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
+    return d.getTime() === todayStart.getTime();
+  });
+  const highPri   = pending.filter(t => t.priority === 1 && !overdue.includes(t));
+  const stale     = pending.filter(t =>
+    new Date(t.createdAt) < weekAgo && !overdue.includes(t)
+  );
+  const completedThisWeek = completed.filter(t =>
+    t.completedAt && new Date(t.completedAt) > weekAgo
+  );
+  const completedToday = completed.filter(t =>
+    t.completedAt && new Date(t.completedAt) >= todayStart
+  );
+
+  const facts    = allMems.filter(m => m.type !== 'session_summary');
+  const sessions = allMems
+    .filter(m => m.type === 'session_summary')
+    .sort((a, b) => b.timestamp > a.timestamp ? 1 : -1)
+    .slice(0, 3);
+
+  const recurringTopics = _detectRecurringTopics(facts);
+  const streak          = _computeStreak(completed);
+
+  return {
+    pending, completed, overdue, dueToday, highPri, stale,
+    completedThisWeek, completedToday, allNotes, facts, sessions,
+    recurringTopics, streak, now,
+  };
 }
 
 // ── Feature 1: Daily Briefing ─────────────────────────────────
@@ -101,25 +227,12 @@ export async function generateDailyBriefing() {
   if (lastDate === today) return;
 
   try {
-    const [allTasks, recentMems] = await Promise.all([
-      DB.tasks.getAll(),
-      DB.memories.getRecent(12),
-    ]);
-
-    const pending      = allTasks.filter(t => t.status === 'pending');
-    const todayStart   = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const overdue      = pending.filter(t => t.dueDate && new Date(t.dueDate) < todayStart);
-    const dueToday     = pending.filter(t => {
-      if (!t.dueDate) return false;
-      const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
-      return d.getTime() === todayStart.getTime();
-    });
-
+    const data = await _loadUserData();
     setOrbState('thinking');
 
     const briefing = hasGeminiKey()
-      ? await _geminiDailyBriefing(pending, overdue, dueToday, recentMems)
-      : _localDailyBriefing(pending, overdue, dueToday, recentMems);
+      ? await _geminiDailyBriefing(data)
+      : _localDailyBriefing(data);
 
     if (!briefing) { setOrbState('idle'); return; }
 
@@ -135,17 +248,18 @@ export async function generateDailyBriefing() {
     setOrbState('success');
 
   } catch (e) {
-    console.warn('[Briefing] Failed:', e.message);
+    console.warn('[Briefing]', e.message);
     setOrbState('idle');
   }
 }
 
-async function _geminiDailyBriefing(pending, overdue, dueToday, allMems) {
+async function _geminiDailyBriefing(data) {
+  const { pending, overdue, dueToday, completedThisWeek, streak,
+          facts, sessions, recurringTopics } = data;
   const userName = State.get('userName') || '';
   const dateStr  = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
-  const timeStr  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   const taskLines = pending.length
     ? pending.slice(0, 8).map(t => {
@@ -154,192 +268,115 @@ async function _geminiDailyBriefing(pending, overdue, dueToday, allMems) {
           ? ` (due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
           : '';
         const flag = overdue.includes(t) ? ' [OVERDUE]' : dueToday.includes(t) ? ' [DUE TODAY]' : '';
-        return `• [${pri}]${flag} ${t.title}${due}`;
+        return `• [${pri}]${flag} ${t.title}${due} — ${_taskAge(t)}`;
       }).join('\n')
     : 'No pending tasks.';
 
-  const facts = allMems.filter(m => m.type !== 'session_summary').slice(0, 5);
-  const memLines = facts.length
-    ? facts.map(m => `• ${m.content.slice(0, 100)}`).join('\n')
-    : 'None.';
+  const factLines = facts.slice(0, 5).map(m =>
+    `• ${m.content.slice(0, 100)} (${_relativeTime(m.timestamp)})`
+  ).join('\n') || 'None.';
 
-  const sessions = await _getSessionSummaries(2);
-  const sessionLines = sessions.length
-    ? sessions.map(s => `• ${s.content.slice(0, 150)}`).join('\n')
-    : 'No previous sessions on record.';
+  const sessionLines = sessions.map(s =>
+    `• ${s.content.slice(0, 150)}`
+  ).join('\n') || 'No previous sessions.';
 
-  const sysPrompt = `You are NOVA, a warm personal AI assistant. Write a morning briefing. Be concise (under 100 words), specific to the user's actual data, and conversational. Do NOT include action markers like [SAVE_MEMORY:...]. Do NOT use a heading like "Here is your briefing:". Speak naturally. End with one engaging question.`;
+  const topicLines = recurringTopics.length
+    ? recurringTopics.map(t => `• "${t.topic}" mentioned ${t.count}x (last: ${_relativeTime(t.lastMentioned)})`).join('\n')
+    : 'None detected.';
 
-  const userPrompt = `Generate my morning briefing.
+  const progressNote = completedThisWeek.length
+    ? `${completedThisWeek.length} tasks completed this week${streak > 1 ? `, ${streak}-day streak` : ''}.`
+    : 'No completions this week yet.';
 
-Today: ${dateStr} at ${timeStr}${userName ? `\nMy name: ${userName}` : ''}
+  const sysPrompt = _novaPersonaPrompt();
 
-Tasks (${pending.length} pending, ${overdue.length} overdue, ${dueToday.length} due today):
+  const userPrompt = `Generate my morning briefing for ${dateStr}${userName ? `, ${userName}` : ''}.
+
+TASKS (${pending.length} pending, ${overdue.length} overdue, ${dueToday.length} due today):
 ${taskLines}
 
-Things I've mentioned recently:
-${memLines}
+PROGRESS: ${progressNote}
 
-What we discussed previously:
-${sessionLines}`;
+RECURRING TOPICS (from memory):
+${topicLines}
+
+RECENT FACTS:
+${factLines}
+
+PREVIOUS SESSIONS:
+${sessionLines}
+
+Rules for this briefing:
+- Under 100 words.
+- Lead with what's most urgent (overdue > due today > high priority).
+- Reference a recurring topic if it's relevant to the tasks.
+- End with one specific question or focus prompt.
+- Do NOT use action markers.
+- Speak as NOVA, not as a generic assistant.`;
 
   const raw = await callGemini([{ role: 'user', text: userPrompt }], sysPrompt);
   return raw.replace(ACTION_RE, '').trim();
 }
 
-function _localDailyBriefing(pending, overdue, dueToday, allMems) {
+function _localDailyBriefing(data) {
+  const { pending, overdue, dueToday, highPri, stale,
+          completedToday, completedThisWeek, streak,
+          facts, sessions, recurringTopics } = data;
+
   const userName = State.get('userName') || '';
-  const hour     = new Date().getHours();
-  const timeWord = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-  const greeting = userName ? `Good ${timeWord}, ${userName}.` : `Good ${timeWord}.`;
+  const tc       = _timeContext();
+  const greet    = userName
+    ? `Good ${tc}, ${userName}.`
+    : `Good ${tc}.`;
 
-  const lines = [greeting, ''];
+  const lines = [greet, ''];
 
+  // Task state
   if (!pending.length) {
-    lines.push('Your task list is clear — a fresh start.');
+    lines.push("No open tasks. The slate is clear.");
   } else {
-    lines.push(`You have ${pending.length} active task${pending.length !== 1 ? 's' : ''}.`);
     if (overdue.length) {
       const names = overdue.slice(0, 2).map(t => `"${t.title}"`).join(', ');
-      lines.push(`${overdue.length} task${overdue.length !== 1 ? 's are' : ' is'} overdue: ${names}.`);
+      lines.push(`${overdue.length} overdue: ${names}${overdue.length > 2 ? ` +${overdue.length - 2} more` : ''}.`);
     }
     if (dueToday.length) {
-      const names = dueToday.map(t => `"${t.title}"`).join(', ');
-      lines.push(`Due today: ${names}.`);
+      lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
     }
-    const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
-    if (top) lines.push(`\nHighest priority: "${top.title}".`);
+    // Top priority recommendation
+    const top = overdue[0] || dueToday[0] || highPri[0] ||
+      [...pending].sort((a, b) => a.priority - b.priority)[0];
+    if (top) {
+      const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
+      lines.push(`\nStart with: "${top.title}"${age > 3 ? ` — ${age} days old` : ''}.`);
+    }
   }
 
-  const facts = allMems.filter(m => m.type !== 'session_summary').slice(0, 2);
-  if (facts.length) {
-    lines.push(`\nRecently noted: ${facts.map(m => m.content.slice(0, 70)).join('; ')}.`);
+  // Progress
+  if (completedToday.length) {
+    lines.push(`\n${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} already done today.`);
+  }
+  if (streak > 1) {
+    lines.push(`${streak}-day completion streak — keep it going.`);
   }
 
-  lines.push('\nWhat do you want to focus on today?');
+  // Recurring topics
+  if (recurringTopics.length) {
+    const top = recurringTopics[0];
+    lines.push(`\nYou've been focused on "${top.topic}" lately (${top.count}x in memory).`);
+  }
+
+  // Stale tasks callout
+  if (stale.length && !overdue.length) {
+    lines.push(`${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been sitting untouched for over a week.`);
+  }
+
+  // Session context
+  if (sessions.length) {
+    lines.push(`\nLast session: ${sessions[0].content.slice(0, 100)}${sessions[0].content.length > 100 ? '…' : ''}`);
+  }
+
+  lines.push('\nWhat are you working on today?');
   return lines.join('\n');
-}
-
-// ── Feature 2: Semantic Memory Retrieval ──────────────────────
-
-function _extractKeywords(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
-}
-
-async function _getRelevantMemories(userMessage, limit = 6) {
-  const keywords = _extractKeywords(userMessage);
-
-  if (!keywords.length) {
-    console.debug('[Memory] No keywords extracted — using recent');
-    return DB.memories.getRecent(limit);
-  }
-
-  const all   = await DB.memories.getAll();
-  const facts = all.filter(m => m.type !== 'session_summary');
-  if (!facts.length) return [];
-
-  const scored = facts.map(m => {
-    const haystack = (m.content + ' ' + (m.tags || []).join(' ')).toLowerCase();
-    let score = 0;
-    for (const kw of keywords) {
-      if (haystack.includes(kw)) score++;
-    }
-    return { memory: m, score };
-  });
-
-  const relevant = scored.filter(s => s.score > 0);
-
-  // Debug logging for relevance verification
-  console.debug(`[Memory] Query: "${userMessage.slice(0, 60)}"`);
-  console.debug(`[Memory] Keywords: [${keywords.join(', ')}]`);
-  console.debug(`[Memory] ${relevant.length} match(es) from ${facts.length} stored:`);
-  relevant.slice(0, 5).forEach(s =>
-    console.debug(`  [score:${s.score}] ${s.memory.content.slice(0, 70)}`)
-  );
-  if (!relevant.length) console.debug('[Memory] No matches — falling back to recent');
-
-  if (!relevant.length) return DB.memories.getRecent(limit);
-
-  return relevant
-    .sort((a, b) =>
-      b.score - a.score ||
-      (b.memory.updatedAt > a.memory.updatedAt ? 1 : -1)
-    )
-    .slice(0, limit)
-    .map(s => s.memory);
-}
-
-// ── Feature 3: Session Memory ─────────────────────────────────
-
-async function _getSessionSummaries(limit = 3) {
-  try {
-    const all = await DB.memories.getByType('session_summary');
-    return all
-      .sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1))
-      .slice(0, limit);
-  } catch { return []; }
-}
-
-async function _maybeGenerateSessionSummary() {
-  if (_busy || _summarizing) return;
-
-  const sessionMsgs   = _messages.slice(_lastSummaryIndex);
-  const userExchanges = sessionMsgs.filter(m => m.role === 'user').length;
-  if (userExchanges < 3) return;
-
-  _summarizing = true;
-  try {
-    if (hasGeminiKey()) {
-      await _geminiSessionSummary(sessionMsgs);
-    } else {
-      await _localSessionSummary(sessionMsgs);
-    }
-    _lastSummaryIndex = _messages.length;
-    try { localStorage.setItem(LS_SESSION_INDEX, String(_lastSummaryIndex)); } catch {}
-  } catch (e) {
-    console.warn('[Session] Failed:', e.message);
-  } finally {
-    _summarizing = false;
-  }
-}
-
-async function _geminiSessionSummary(messages) {
-  const transcript = messages
-    .map(m => `${m.role === 'user' ? 'User' : 'NOVA'}: ${m.text.slice(0, 100)}`)
-    .join('\n');
-
-  const prompt = `Summarize this conversation in 2-3 sentences. Focus on: goals or intentions mentioned, worries or concerns, commitments made, important personal facts shared. Be specific — use the actual topics and names, not vague descriptions. Do NOT include action markers.
-
-Conversation:
-${transcript}`;
-
-  const raw = await callGemini(
-    [{ role: 'user', text: prompt }],
-    'You are a concise conversation summarizer. Return only the summary text. No preamble. No action markers.'
-  );
-
-  const summary = raw.replace(ACTION_RE, '').trim().slice(0, 500);
-  if (!summary) return;
-
-  await DB.memories.create({
-    type: 'session_summary', content: summary, source: 'ai', tags: ['session'],
-  });
-  console.log('[Session] Summary saved:', summary.slice(0, 80) + (summary.length > 80 ? '…' : ''));
-}
-
-async function _localSessionSummary(messages) {
-  const userMsgs = messages.filter(m => m.role === 'user').map(m => m.text);
-  if (!userMsgs.length) return;
-  const topics  = userMsgs.slice(0, 4).map(t => `"${t.slice(0, 60)}"`).join(', ');
-  const summary = `Session: User discussed ${topics}.`;
-  await DB.memories.create({
-    type: 'session_summary', content: summary, source: 'local', tags: ['session'],
-  });
-  console.log('[Session] Local summary saved');
 }
 
 // ── Main message handler ──────────────────────────────────────
@@ -355,24 +392,22 @@ export async function handleUserMessage(rawText) {
   Bus.emit(EVENTS.CHAT_MESSAGE_SENT, { preview: text.slice(0, 50) });
   Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });
   _renderIfOpen();
-
   setOrbState('thinking');
 
   try {
     let response;
-
     const local = await _tryLocalIntent(text);
 
     if (local !== null) {
       response = local;
     } else if (hasGeminiKey()) {
-      const context      = await _buildContext(text); // pass message for semantic retrieval
+      const context      = await _buildContext(text);
       const systemPrompt = _buildSystemPrompt(context);
       const history      = _messages.slice(-24);
       const raw          = await callGemini(history, systemPrompt);
       response           = await _parseActions(raw);
     } else {
-      response = await _localFallback(text);
+      response = await _offlineResponse(text);
     }
 
     setOrbState('responding');
@@ -382,19 +417,17 @@ export async function handleUserMessage(rawText) {
 
     Bus.emit(EVENTS.AI_RESPONSE_RECEIVED, { preview: response.slice(0, 50) });
     await logEvent(EVENT_TYPES.AI_RESPONDED, 'AI response generated');
-
     await _delay(500);
     setOrbState('success');
 
   } catch (err) {
     console.error('[Conversation]', err.message);
-    let errMsg;
-    if      (err.message === 'NO_KEY')         errMsg = 'No AI key configured. Go to Settings → Gemini API Key to enable real AI responses.';
-    else if (err.message === 'INVALID_KEY')    errMsg = 'Invalid Gemini API key. Check Settings → Gemini API Key.';
-    else if (err.message === 'RATE_LIMIT')     errMsg = 'Rate limit reached. Wait a moment and try again.';
-    else if (err.message === 'EMPTY_RESPONSE') errMsg = 'Gemini returned an empty response. Please try again.';
-    else                                        errMsg = 'Something went wrong. Please try again.';
-
+    const errMsg =
+      err.message === 'NO_KEY'         ? 'No API key configured. Go to Settings → Gemini API Key.' :
+      err.message === 'INVALID_KEY'    ? 'Invalid Gemini key. Check Settings → Gemini API Key.' :
+      err.message === 'RATE_LIMIT'     ? 'Rate limit hit. Give it a moment.' :
+      err.message === 'EMPTY_RESPONSE' ? 'Empty response from Gemini. Try again.' :
+                                         'Something went wrong. Try again.';
     _addMessage('nova', errMsg);
     _saveHistory();
     _renderIfOpen();
@@ -405,7 +438,6 @@ export async function handleUserMessage(rawText) {
 }
 
 // ── Local intent router ───────────────────────────────────────
-// Returns a string if handled locally, null to fall through to Gemini.
 
 async function _tryLocalIntent(text) {
   const q = text.toLowerCase().trim();
@@ -413,15 +445,15 @@ async function _tryLocalIntent(text) {
   if (/^(clear|reset|new chat|start over)$/.test(q)) {
     _messages = _messages.slice(-1);
     _saveHistory();
-    return 'Conversation cleared.';
+    return 'Cleared.';
   }
-
-  if (/^(what time is it|what('s| is) the time|current time|time)$/.test(q)) {
-    return `It's ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+  if (/^(what time is it|what('s| is) the time|current time|time\??)$/.test(q)) {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
-
-  if (/^(what('s| is) (today|the date)|today's date|date)$/.test(q)) {
-    return `Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`;
+  if (/^(what('s| is) (today|the date)|today's date|date\??)$/.test(q)) {
+    return new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
   }
 
   const noteCmd = text.match(/^note:\s+(.+)/i);
@@ -433,116 +465,590 @@ async function _tryLocalIntent(text) {
   return null;
 }
 
-// ── Context builder (now accepts user message for Feature 2) ──
+// ── NOVA Persona (used in Gemini system prompts) ──────────────
+
+function _novaPersonaPrompt() {
+  const userName = State.get('userName') || '';
+  const aiName   = State.get('aiName')   || 'NOVA';
+  const tc       = _timeContext();
+  const dateStr  = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
+  const timeStr  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  return `You are ${aiName} — a personal operating system, not a chatbot.
+${userName ? `The user's name is ${userName}.` : ''}
+Current time: ${timeStr} (${tc}) on ${dateStr}.
+
+VOICE AND STYLE:
+- Direct. No filler. No "Certainly!", "Of course!", "Great question!", "As an AI…"
+- Confident. You have the user's data. Use it without hedging.
+- Personal. Reference their actual tasks, notes, and memories by name.
+- Proactive. Surface what matters — don't just answer the literal question.
+- Brief. Under 100 words unless asked for detail.
+- One or two short paragraphs, or a tight list. Never bullet-dumps.
+
+HOW TO REFERENCE MEMORY AND HISTORY:
+- Never say: "I found in your memory…" / "According to your notes…" / "Based on your data…"
+- Say instead: "Last week you mentioned…" / "You've been working on this for a few days." / "This keeps coming up — you've noted it three times."
+- Use relative time: yesterday, last week, three days ago, earlier this month.
+
+HOW TO HANDLE TASKS:
+- Overdue items always get mentioned first.
+- When asked for focus or priority, give ONE specific recommendation with a reason.
+- Notice task age: a 10-day-old pending task deserves a flag.
+- If a task has been mentioned in memories AND is still pending, call that out.
+
+HOW TO HANDLE PATTERNS:
+- If a topic appears repeatedly in memory, say so directly.
+- Notice unfinished commitments: "You said you'd finish X — still pending."
+- Reference streaks positively: "Three days of completions — don't break it."
+
+WHAT TO AVOID:
+- Restating the question before answering
+- Long preambles before getting to the point
+- Saying "I" when you can just state the fact
+- Lists when a sentence works better
+- Any language that sounds like a help desk or customer support bot`;
+}
+
+// ── Context builder for Gemini ────────────────────────────────
 
 async function _buildContext(userMessage = '') {
   try {
-    const [allNotes, allTasks, memCount] = await Promise.all([
-      DB.notes.getAll(),
-      DB.tasks.getAll(),
-      DB.memories.count(),
-    ]);
-
-    const pending   = allTasks.filter(t => t.status === 'pending');
-    const completed = allTasks.filter(t => t.status === 'completed');
+    const data = await _loadUserData();
+    const {
+      pending, completed, overdue, dueToday, highPri, stale,
+      completedThisWeek, completedToday, allNotes, facts,
+      sessions, recurringTopics, streak,
+    } = data;
 
     const recentNotes = [...allNotes]
-      .sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1))
+      .sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1)
       .slice(0, 5);
 
     const recentPending = [...pending]
       .sort((a, b) => a.priority - b.priority)
       .slice(0, 8);
 
-    // Feature 2: relevance-ranked memories based on this message
     const relevantMems = await _getRelevantMemories(userMessage, 6);
 
-    // Feature 3: recent session summaries for continuity context
-    const sessionSummaries = await _getSessionSummaries(2);
-
-    return { recentNotes, recentPending, completed, memCount, allNotes, relevantMems, sessionSummaries };
+    return {
+      recentNotes, recentPending, completed, overdue, dueToday, highPri, stale,
+      completedThisWeek, completedToday, allNotes, relevantMems,
+      sessionSummaries: sessions, recurringTopics, streak,
+      memCount: facts.length,
+    };
   } catch {
-    return { recentNotes: [], recentPending: [], completed: [], memCount: 0, allNotes: [], relevantMems: [], sessionSummaries: [] };
+    return {
+      recentNotes: [], recentPending: [], completed: [], overdue: [], dueToday: [],
+      highPri: [], stale: [], completedThisWeek: [], completedToday: [], allNotes: [],
+      relevantMems: [], sessionSummaries: [], recurringTopics: [], streak: 0, memCount: 0,
+    };
   }
 }
 
 function _buildSystemPrompt(ctx) {
-  const aiName   = State.get('aiName')   || 'NOVA';
-  const userName = State.get('userName') || '';
-  const now      = new Date();
-  const timeStr  = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const dateStr  = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const {
+    recentNotes, recentPending, completed, overdue, dueToday, stale,
+    completedThisWeek, completedToday, allNotes, relevantMems,
+    sessionSummaries, recurringTopics, streak, memCount,
+  } = ctx;
 
-  const notesSummary = ctx.recentNotes.length
-    ? ctx.recentNotes.map(n => `• "${n.title || 'Untitled'}"`).join('\n')
-    : 'None yet.';
+  const notesSummary = recentNotes.length
+    ? recentNotes.map(n => `• "${n.title || 'Untitled'}"`).join('\n')
+    : 'None.';
 
-  const tasksSummary = ctx.recentPending.length
-    ? ctx.recentPending.map(t => {
-        const p   = t.priority === 1 ? 'High' : t.priority === 3 ? 'Low' : 'Med';
-        const due = t.dueDate
+  const tasksSummary = recentPending.length
+    ? recentPending.map(t => {
+        const p    = t.priority === 1 ? 'HIGH' : t.priority === 3 ? 'LOW' : 'MED';
+        const due  = t.dueDate
           ? ` · due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
           : '';
-        return `• [ID:${t.id}] "${t.title}" (${p}${due})`;
+        const flag = overdue.includes(t) ? ' ⚠ OVERDUE' : dueToday.includes(t) ? ' · DUE TODAY' : '';
+        return `• [ID:${t.id}] [${p}]${flag} "${t.title}"${due} (${_taskAge(t)})`;
       }).join('\n')
     : 'No pending tasks.';
 
-  const memsSummary = ctx.relevantMems.length
-    ? ctx.relevantMems.map(m => `• ${m.content.slice(0, 80)}`).join('\n')
-    : 'None yet.';
+  const overdueNote = overdue.length
+    ? `OVERDUE (${overdue.length}): ${overdue.map(t => `"${t.title}"`).join(', ')}`
+    : 'None overdue.';
 
-  const sessionCtx = ctx.sessionSummaries.length
-    ? ctx.sessionSummaries.map(s => `• ${s.content.slice(0, 150)}`).join('\n')
-    : 'No previous sessions on record.';
+  const staleNote = stale.length
+    ? `STALE >7 days (${stale.length}): ${stale.slice(0, 3).map(t => `"${t.title}"`).join(', ')}`
+    : '';
 
-  return `You are ${aiName}, a personal AI operating system assistant. You are concise, intelligent, and warm.
+  const progressNote = [
+    completedToday.length ? `${completedToday.length} completed today` : '',
+    completedThisWeek.length ? `${completedThisWeek.length} this week` : '',
+    streak > 1 ? `${streak}-day streak` : '',
+  ].filter(Boolean).join(' · ') || 'No completions yet.';
 
-${userName ? `User's name: ${userName}` : ''}
-Current time: ${timeStr}
-Current date: ${dateStr}
+  const topicNote = recurringTopics.length
+    ? recurringTopics.map(t =>
+        `• "${t.topic}" (${t.count}x, last ${_relativeTime(t.lastMentioned)})`
+      ).join('\n')
+    : 'None detected.';
 
-== PREVIOUS SESSIONS ==
-Use these to reference what you've discussed before. If relevant, say "last time you mentioned…" naturally.
-${sessionCtx}
+  const memsSummary = relevantMems.length
+    ? relevantMems.map(m =>
+        `• ${m.content.slice(0, 80)} (${_relativeTime(m.timestamp || m.updatedAt)})`
+      ).join('\n')
+    : 'None.';
 
-== USER'S DATA ==
+  const sessionCtx = sessionSummaries.length
+    ? sessionSummaries.map(s => `• ${s.content.slice(0, 150)}`).join('\n')
+    : 'No previous sessions.';
 
-Notes (${ctx.allNotes.length} total, showing recent):
+  return `${_novaPersonaPrompt()}
+
+== USER DATA ==
+
+Notes (${allNotes.length} total):
 ${notesSummary}
 
-Pending tasks (${ctx.recentPending.length} shown):
+Pending tasks (${recentPending.length} shown):
 ${tasksSummary}
 
-Completed tasks: ${ctx.completed.length}
-Saved memories: ${ctx.memCount}
+${overdueNote}
+${staleNote}
 
-Relevant memories (ranked by match to this conversation — not just the most recent):
+Progress: ${progressNote}
+Completed total: ${completed.length} · Stored memories: ${memCount}
+
+Recurring topics in memory:
+${topicNote}
+
+Relevant memories (keyword-matched to this conversation):
 ${memsSummary}
 
-== BEHAVIORAL RULES ==
-
-1. Keep responses concise — under 120 words unless the user asks for detail.
-2. Be warm but efficient. This is a personal OS, not a chatbot.
-3. Reference the user's actual data when relevant.
-4. Never invent data that isn't in the context above.
-5. If the previous sessions section is relevant to what the user said, reference it naturally.
+Previous sessions:
+${sessionCtx}
 
 == ACTION MARKERS ==
-When appropriate, append ONE OR MORE of these on separate lines at the very end of your response.
-The markers are processed automatically and NOT shown to the user — never mention them.
+Append at the END of your response only. Never mention them to the user.
 
-When the user shares a personal fact worth preserving (exam dates, appointments, preferences, goals, names):
-[SAVE_MEMORY: "one clear sentence summarizing the fact"]
-
-When the user explicitly asks to create a task:
+[SAVE_MEMORY: "one sentence fact"]
 [CREATE_TASK: "task title"]
+[CREATE_NOTE: "title | content"]
+[COMPLETE_TASK: "task id or title substring"]`;
+}
 
-When the user explicitly asks to create a note:
-[CREATE_NOTE: "note title | note content"]
+// ── Semantic memory retrieval ─────────────────────────────────
 
-When the user asks to mark a task as done/complete/finished — use the task ID from the list above:
-[COMPLETE_TASK: "task_id_here"]
-`;
+function _extractKeywords(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+async function _getRelevantMemories(userMessage, limit = 6) {
+  const keywords = _extractKeywords(userMessage);
+
+  if (!keywords.length) {
+    console.debug('[Memory] No keywords — using recent');
+    return DB.memories.getRecent(limit);
+  }
+
+  const all   = await DB.memories.getAll();
+  const facts = all.filter(m => m.type !== 'session_summary');
+  if (!facts.length) return [];
+
+  const scored = facts.map(m => {
+    const hay   = (m.content + ' ' + (m.tags || []).join(' ')).toLowerCase();
+    const score = keywords.reduce((n, kw) => n + (hay.includes(kw) ? 1 : 0), 0);
+    return { memory: m, score };
+  });
+
+  const relevant = scored.filter(s => s.score > 0);
+
+  console.debug(`[Memory] "${userMessage.slice(0, 50)}" → keywords: [${keywords.join(', ')}]`);
+  relevant.slice(0, 5).forEach(s =>
+    console.debug(`  [${s.score}] ${s.memory.content.slice(0, 60)}`)
+  );
+  if (!relevant.length) console.debug('[Memory] No matches — fallback to recent');
+
+  if (!relevant.length) return DB.memories.getRecent(limit);
+
+  return relevant
+    .sort((a, b) => b.score - a.score || (b.memory.updatedAt > a.memory.updatedAt ? 1 : -1))
+    .slice(0, limit)
+    .map(s => s.memory);
+}
+
+// ── Session memory ────────────────────────────────────────────
+
+async function _getSessionSummaries(limit = 3) {
+  try {
+    const all = await DB.memories.getByType('session_summary');
+    return all
+      .sort((a, b) => b.timestamp > a.timestamp ? 1 : -1)
+      .slice(0, limit);
+  } catch { return []; }
+}
+
+async function _maybeGenerateSessionSummary() {
+  if (_busy || _summarizing) return;
+
+  const sessionMsgs   = _messages.slice(_lastSummaryIndex);
+  const userExchanges = sessionMsgs.filter(m => m.role === 'user').length;
+  if (userExchanges < 3) return;
+
+  _summarizing = true;
+  try {
+    hasGeminiKey()
+      ? await _geminiSessionSummary(sessionMsgs)
+      : await _localSessionSummary(sessionMsgs);
+
+    _lastSummaryIndex = _messages.length;
+    try { localStorage.setItem(LS_SESSION_INDEX, String(_lastSummaryIndex)); } catch {}
+  } catch (e) {
+    console.warn('[Session]', e.message);
+  } finally {
+    _summarizing = false;
+  }
+}
+
+async function _geminiSessionSummary(messages) {
+  const transcript = messages
+    .map(m => `${m.role === 'user' ? 'User' : 'NOVA'}: ${m.text.slice(0, 100)}`)
+    .join('\n');
+
+  const prompt = `Summarize this conversation in 2-3 sentences. Focus on: goals, worries, commitments, and important facts. Be specific — use actual names and topics, not vague descriptions. No action markers.
+
+${transcript}`;
+
+  const raw = await callGemini(
+    [{ role: 'user', text: prompt }],
+    'You are a concise summarizer. Return only the summary. No action markers. No preamble.'
+  );
+
+  const summary = raw.replace(ACTION_RE, '').trim().slice(0, 500);
+  if (!summary) return;
+
+  await DB.memories.create({
+    type: 'session_summary', content: summary, source: 'ai', tags: ['session'],
+  });
+  console.log('[Session] Saved:', summary.slice(0, 80));
+}
+
+async function _localSessionSummary(messages) {
+  const userMsgs = messages.filter(m => m.role === 'user').map(m => m.text);
+  if (!userMsgs.length) return;
+  const topics  = userMsgs.slice(0, 4).map(t => `"${t.slice(0, 60)}"`).join(', ');
+  await DB.memories.create({
+    type: 'session_summary',
+    content: `Session: User discussed ${topics}.`,
+    source: 'local', tags: ['session'],
+  });
+}
+
+// ── Offline Intelligence Layer ────────────────────────────────
+// Full analysis without Gemini. Dispatches by intent.
+
+async function _offlineResponse(text) {
+  const q    = text.toLowerCase().trim();
+  const data = await _loadUserData();
+
+  // Priority / focus
+  if (/\b(focus|priority|priorities|what.*work|start|tackle|important|urgent|first)\b/.test(q)) {
+    return _offlinePriority(data);
+  }
+  // Progress / how am I doing
+  if (/\b(progress|how.*doing|productive|accomplish|complet|done|finish|streak)\b/.test(q)) {
+    return _offlineProgress(data);
+  }
+  // Overview / summary
+  if (/\b(summary|overview|status|caught up|brief|update|everything)\b/.test(q)) {
+    return _offlineSummary(data);
+  }
+  // Recommendation
+  if (/\b(recommend|suggest|advice|what should|next step|plan)\b/.test(q)) {
+    return _offlineRecommendation(data, q);
+  }
+  // Memory / what I've been thinking
+  if (/\b(memor|remember|know about|thinking about|mention|discuss|topic|pattern)\b/.test(q)) {
+    return _offlineMemories(data, q);
+  }
+  // Tasks
+  if (/\b(task|todo|pending|overdue|due|list)\b/.test(q)) {
+    return _offlineTasks(data, q);
+  }
+  // Notes
+  if (/\b(note|wrote|saved|document|notes)\b/.test(q)) {
+    return _offlineNotes(data);
+  }
+  // Help
+  if (/\b(help|what can|commands|capabilities)\b/.test(q)) {
+    return _offlineHelp();
+  }
+  // Quick note/task creation
+  const noteMatch = q.match(/^(?:remember|save|note this)[:\-—]?\s+(.+)/i);
+  if (noteMatch) return _createNote(noteMatch[1].trim());
+  const taskMatch = q.match(/^(?:todo|add task|create task|remind me to)[:\-—]?\s+(.+)/i);
+  if (taskMatch) return _createTask(taskMatch[1].trim());
+
+  // Fallback — still be useful
+  return _offlineGeneral(data, text);
+}
+
+function _offlinePriority(data) {
+  const { pending, overdue, dueToday, highPri, stale, recurringTopics } = data;
+
+  if (!pending.length) return "No open tasks right now.";
+
+  const lines = [];
+
+  if (overdue.length) {
+    lines.push(`${overdue.length} overdue — deal with ${overdue.length === 1 ? 'it' : 'these'} first:`);
+    overdue.slice(0, 3).forEach(t =>
+      lines.push(`  • "${t.title}" (${_taskAge(t)})`)
+    );
+  }
+
+  if (dueToday.length) {
+    lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
+  }
+
+  const top = overdue[0] || dueToday[0] || highPri[0] ||
+    [...pending].sort((a, b) => a.priority - b.priority)[0];
+
+  if (top && !overdue.length && !dueToday.length) {
+    const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
+    lines.push(`Top priority: "${top.title}"${age > 2 ? ` — ${age} days old` : ''}.`);
+  }
+
+  if (stale.length) {
+    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been open over a week — worth reviewing.`);
+  }
+
+  if (recurringTopics.length && !overdue.length) {
+    lines.push(`\nYou keep coming back to "${recurringTopics[0].topic}" — make sure it's represented in your tasks.`);
+  }
+
+  return lines.join('\n');
+}
+
+function _offlineProgress(data) {
+  const { completed, completedToday, completedThisWeek, pending, overdue, streak } = data;
+
+  const lines = [];
+
+  if (completedToday.length) {
+    lines.push(`${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} done today.`);
+  }
+  if (completedThisWeek.length) {
+    lines.push(`${completedThisWeek.length} completed this week out of ${pending.length + completedThisWeek.length} total.`);
+  }
+  if (streak > 1) {
+    lines.push(`${streak}-day completion streak.`);
+  }
+  if (!completedToday.length && !completedThisWeek.length) {
+    lines.push("Nothing completed yet this week.");
+  }
+
+  if (overdue.length) {
+    lines.push(`\n${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''} — that's the gap worth closing.`);
+  }
+
+  lines.push(`\n${completed.length} total tasks completed across all time.`);
+
+  return lines.join('\n');
+}
+
+function _offlineSummary(data) {
+  const { pending, completed, overdue, dueToday, allNotes, facts, sessions,
+          recurringTopics, streak, completedThisWeek } = data;
+
+  const lines = [];
+
+  // Tasks
+  if (pending.length) {
+    lines.push(`${pending.length} open task${pending.length !== 1 ? 's' : ''}${overdue.length ? `, ${overdue.length} overdue` : ''}${dueToday.length ? `, ${dueToday.length} due today` : ''}.`);
+  } else {
+    lines.push('No open tasks.');
+  }
+
+  // Notes
+  if (allNotes.length) lines.push(`${allNotes.length} note${allNotes.length !== 1 ? 's' : ''} saved.`);
+
+  // Memory
+  if (facts.length) lines.push(`${facts.length} memor${facts.length !== 1 ? 'ies' : 'y'} stored.`);
+
+  // Progress
+  if (completedThisWeek.length || streak > 1) {
+    const parts = [];
+    if (completedThisWeek.length) parts.push(`${completedThisWeek.length} completed this week`);
+    if (streak > 1) parts.push(`${streak}-day streak`);
+    lines.push(parts.join(', ') + '.');
+  }
+
+  // Recurring topic
+  if (recurringTopics.length) {
+    lines.push(`\nYou've mentioned "${recurringTopics[0].topic}" ${recurringTopics[0].count} times recently.`);
+  }
+
+  // Last session
+  if (sessions.length) {
+    lines.push(`\nLast session: ${sessions[0].content.slice(0, 100)}${sessions[0].content.length > 100 ? '…' : ''}`);
+  }
+
+  return lines.join('\n');
+}
+
+function _offlineRecommendation(data, query) {
+  const { pending, overdue, dueToday, highPri, stale, recurringTopics, completedThisWeek } = data;
+
+  if (!pending.length) {
+    return "No open tasks. Add something to work toward — task: [description].";
+  }
+
+  const lines = [];
+
+  if (overdue.length) {
+    lines.push(`Clear the overdue queue first — "${overdue[0].title}" has been waiting the longest.`);
+    if (overdue.length > 1) {
+      lines.push(`Then: ${overdue.slice(1, 3).map(t => `"${t.title}"`).join(', ')}.`);
+    }
+    return lines.join('\n');
+  }
+
+  if (dueToday.length) {
+    lines.push(`Today's focus: "${dueToday[0].title}".`);
+    if (dueToday.length > 1) lines.push(`Also due: ${dueToday.slice(1).map(t => `"${t.title}"`).join(', ')}.`);
+    return lines.join('\n');
+  }
+
+  const top = highPri[0] || [...pending].sort((a, b) => a.priority - b.priority)[0];
+  if (top) {
+    const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
+    lines.push(`Focus on: "${top.title}"${age > 3 ? ` — it's been open ${age} days` : ''}.`);
+  }
+
+  if (stale.length) {
+    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been untouched for 7+ days. Worth closing or deleting.`);
+  }
+
+  if (recurringTopics.length) {
+    lines.push(`\n"${recurringTopics[0].topic}" keeps coming up in your notes — make sure it's accounted for.`);
+  }
+
+  return lines.join('\n');
+}
+
+async function _offlineMemories(data, query) {
+  const { facts, sessions, recurringTopics } = data;
+
+  if (!facts.length && !sessions.length) {
+    return "Nothing stored in memory yet. Start talking — I'll pick up what matters.";
+  }
+
+  const lines = [];
+
+  if (recurringTopics.length) {
+    lines.push(`Recurring topics across your memories:`);
+    recurringTopics.forEach(t =>
+      lines.push(`  • "${t.topic}" — ${t.count}x, last ${_relativeTime(t.lastMentioned)}`)
+    );
+    lines.push('');
+  }
+
+  if (facts.length) {
+    const recent = [...facts].sort((a, b) => b.timestamp > a.timestamp ? 1 : -1).slice(0, 4);
+    lines.push(`Recent facts (${facts.length} total):`);
+    recent.forEach(m =>
+      lines.push(`  • ${m.content.slice(0, 80)} — ${_relativeTime(m.timestamp)}`)
+    );
+  }
+
+  if (sessions.length) {
+    lines.push(`\nLast session: ${sessions[0].content.slice(0, 120)}`);
+  }
+
+  return lines.join('\n');
+}
+
+async function _offlineTasks(data, query) {
+  const { pending, overdue, dueToday, highPri, stale, completed } = data;
+
+  if (!pending.length) return "No pending tasks. Use task: [text] to add one.";
+
+  const lines = [];
+
+  if (overdue.length) {
+    lines.push(`Overdue (${overdue.length}):`);
+    overdue.forEach(t => lines.push(`  • "${t.title}" — ${_taskAge(t)}`));
+    lines.push('');
+  }
+  if (dueToday.length) {
+    lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
+  }
+  if (highPri.length) {
+    lines.push(`High priority: ${highPri.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
+  }
+  if (stale.length) {
+    lines.push(`\nStale (7+ days open): ${stale.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
+  }
+
+  lines.push(`\n${pending.length} open, ${completed.length} completed total.`);
+  return lines.join('\n');
+}
+
+async function _offlineNotes(data) {
+  const { allNotes } = data;
+
+  if (!allNotes.length) return 'No notes saved yet. Use note: [text] to create one.';
+
+  const pinned = allNotes.filter(n => n.pinned);
+  const recent = [...allNotes]
+    .sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1)
+    .slice(0, 5);
+
+  const lines = [`${allNotes.length} note${allNotes.length !== 1 ? 's' : ''} saved.`];
+  if (pinned.length) lines.push(`Pinned: ${pinned.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
+  lines.push(`Recent: ${recent.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
+
+  return lines.join('\n');
+}
+
+function _offlineHelp() {
+  return [
+    'Without a Gemini key, I can still analyze your data directly.',
+    '',
+    'Ask me:',
+    '• **"What should I focus on?"** — priority analysis',
+    '• **"How\'s my progress?"** — completion + streak',
+    '• **"Give me a summary"** — full system overview',
+    '• **"What have I been thinking about?"** — memory patterns',
+    '• **"Recommend something"** — data-driven suggestion',
+    '',
+    'Shortcuts: **note: [text]** · **task: [text]** · **clear**',
+    '',
+    'Add a Gemini key in Settings for full conversational AI.',
+  ].join('\n');
+}
+
+function _offlineGeneral(data, text) {
+  const { pending, overdue, facts, recurringTopics } = data;
+  const lines = [];
+
+  // Still try to be useful
+  if (overdue.length) {
+    lines.push(`You have ${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''} — "${overdue[0].title}" is the oldest.`);
+  } else if (pending.length) {
+    const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
+    lines.push(`${pending.length} open tasks. Top priority: "${top.title}".`);
+  }
+
+  if (recurringTopics.length) {
+    lines.push(`You've mentioned "${recurringTopics[0].topic}" ${recurringTopics[0].count} times.`);
+  }
+
+  lines.push('\nAdd a Gemini key in Settings for full AI responses. Or ask about tasks, priorities, or memories — I can analyze those directly.');
+
+  return lines.join('\n');
 }
 
 // ── Action marker parser ──────────────────────────────────────
@@ -557,212 +1063,57 @@ async function _parseActions(rawText) {
     actions.push({ type: match[1], value: match[2] });
     clean = clean.replace(match[0], '');
   }
-
   clean = clean.replace(/\n{3,}/g, '\n\n').trim();
 
   for (const action of actions) {
     try { await _executeAction(action.type, action.value); }
-    catch (e) { console.warn('[Conversation] Action failed:', action.type, e); }
+    catch (e) { console.warn('[Action]', action.type, e); }
   }
-
   return clean;
 }
 
 async function _executeAction(type, value) {
   switch (type) {
     case 'SAVE_MEMORY': {
-      const id = await DB.memories.create({
-        type: 'ai_fact', content: value, source: 'ai', tags: [],
-      });
+      const id = await DB.memories.create({ type: 'ai_fact', content: value, source: 'ai', tags: [] });
       Bus.emit(EVENTS.MEMORY_CREATED, { id, content: value });
-      await logEvent(EVENT_TYPES.MEMORY_CREATED, `Memory saved: ${value.slice(0, 60)}`);
+      await logEvent(EVENT_TYPES.MEMORY_CREATED, `Memory: ${value.slice(0, 60)}`);
       showToast('◈ Memory saved', 'success', 2200);
       break;
     }
     case 'CREATE_TASK': {
       const id = await DB.tasks.create({ title: value.slice(0, 80) });
       Bus.emit(EVENTS.TASK_CREATED, { id, title: value });
-      await logEvent(EVENT_TYPES.TASK_CREATED, `Task created: ${value.slice(0, 60)}`);
-      showToast(`◉ Task created: "${value.slice(0, 40)}"`, 'success', 2500);
+      await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${value.slice(0, 60)}`);
+      showToast(`◉ Task: "${value.slice(0, 40)}"`, 'success', 2500);
       break;
     }
     case 'CREATE_NOTE': {
       const [title, ...rest] = value.split('|');
       const content = rest.join('|').trim();
-      const id = await DB.notes.create({
-        title:   title.trim().slice(0, 60),
-        content: content || title.trim(),
-      });
+      const id = await DB.notes.create({ title: title.trim().slice(0, 60), content: content || title.trim() });
       Bus.emit(EVENTS.NOTE_CREATED, { id, title: title.trim() });
-      await logEvent(EVENT_TYPES.NOTE_CREATED, `Note created: ${title.trim().slice(0, 60)}`);
-      showToast(`◇ Note saved: "${title.trim().slice(0, 35)}"`, 'success', 2500);
+      await logEvent(EVENT_TYPES.NOTE_CREATED, `Note: ${title.trim().slice(0, 60)}`);
+      showToast(`◇ Note: "${title.trim().slice(0, 35)}"`, 'success', 2500);
       break;
     }
     case 'COMPLETE_TASK': {
-      const allTasks = await DB.tasks.getAll();
-      const target   = allTasks.find(t =>
-        t.id === value ||
-        t.title.toLowerCase().includes(value.toLowerCase())
+      const all    = await DB.tasks.getAll();
+      const target = all.find(t =>
+        t.id === value || t.title.toLowerCase().includes(value.toLowerCase())
       );
       if (target && target.status !== 'completed') {
-        await DB.tasks.update(target.id, {
-          status:      'completed',
-          completedAt: new Date().toISOString(),
-        });
+        await DB.tasks.update(target.id, { status: 'completed', completedAt: new Date().toISOString() });
         Bus.emit(EVENTS.TASK_COMPLETED, { id: target.id, title: target.title });
-        await logEvent(EVENT_TYPES.TASK_COMPLETED, `Task completed: ${target.title}`);
-        showToast(`✓ Task done: "${target.title.slice(0, 40)}"`, 'success', 2500);
+        await logEvent(EVENT_TYPES.TASK_COMPLETED, `Done: ${target.title}`);
+        showToast(`✓ "${target.title.slice(0, 40)}"`, 'success', 2500);
       }
       break;
     }
   }
 }
 
-// ── Local data-aware fallback (no Gemini key) ─────────────────
-
-async function _localFallback(text) {
-  const q = text.toLowerCase().trim();
-
-  if (/\b(help|what can you|commands|capabilities)\b/.test(q)) return _helpText();
-  if (/\b(notes?|my notes?|show notes?|list notes?)\b/.test(q)) return _notesResponse();
-  if (/\b(tasks?|todos?|pending|to-?do|show tasks?|list tasks?)\b/.test(q)) return _tasksResponse();
-  if (/\b(memor(y|ies)|what.*remember|recall|what.*know)\b/.test(q)) return _memoriesResponse();
-
-  const searchMatch = q.match(/\b(?:search|find|look for)\b\s+(.+)/);
-  if (searchMatch) return _searchResponse(searchMatch[1].trim());
-
-  if (/\b(summary|overview|status|how many|count)\b/.test(q)) return _statusResponse();
-
-  const noteMatch = q.match(/^(?:remember|save|add note|create note|note this)[:\-—]?\s+(.+)/i);
-  if (noteMatch) return _createNote(noteMatch[1].trim());
-
-  const taskMatch = q.match(/^(?:todo|add task|create task|remind me to)[:\-—]?\s+(.+)/i);
-  if (taskMatch) return _createTask(taskMatch[1].trim());
-
-  const name = State.get('userName');
-  const prefix = name ? `${name}, ` : '';
-  return `${prefix}I can answer that better with a Gemini API key. Go to Settings → Gemini API Key to enable real AI. Until then, try: "show my notes", "pending tasks", "give me a summary", or "help".`;
-}
-
-// ── Local response builders ───────────────────────────────────
-
-function _helpText() {
-  return hasGeminiKey()
-    ? [
-        'You can talk to me naturally — I understand context.',
-        '',
-        'Examples:',
-        '**"What do I need to do today?"**',
-        '**"Remember that my interview is Friday"**',
-        '**"Create a task to revise economics"**',
-        '**"What have I saved about exams?"**',
-        '**"Mark the grocery task as done"**',
-        '',
-        'Shortcuts: **note: [text]** · **task: [text]** · **clear**',
-      ].join('\n')
-    : [
-        'Add a Gemini API key in Settings to enable full AI.',
-        '',
-        'Without it, I can still:',
-        '**show my notes** — list your notes',
-        '**pending tasks** — see what needs doing',
-        '**give me a summary** — notes + tasks + memory count',
-        '**find [keyword]** — search everything',
-        '**note: [text]** — quick note',
-        '**task: [text]** — quick task',
-      ].join('\n');
-}
-
-async function _notesResponse() {
-  try {
-    const all = await DB.notes.getAll();
-    if (!all.length) return 'No notes yet. Say "note: [text]" to create one.';
-    const pinned = all.filter(n => n.pinned);
-    const recent = [...all].sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1)).slice(0, 5);
-    const lines  = [`You have ${all.length} note${all.length !== 1 ? 's' : ''}.`];
-    if (pinned.length) lines.push(`Pinned: ${pinned.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
-    lines.push(`Recent: ${recent.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
-    lines.push('Open the Notes panel to read them.');
-    return lines.join('\n');
-  } catch { return "I couldn't read your notes right now."; }
-}
-
-async function _tasksResponse() {
-  try {
-    const all     = await DB.tasks.getAll();
-    const pending = all.filter(t => t.status === 'pending');
-    if (!all.length) return 'No tasks yet. Say "task: [description]" to add one.';
-    const lines = [];
-    if (pending.length) {
-      const sorted = [...pending].sort((a, b) => a.priority - b.priority);
-      lines.push(`${pending.length} pending task${pending.length !== 1 ? 's' : ''}:`);
-      sorted.slice(0, 5).forEach(t => {
-        const p   = t.priority === 1 ? 'High' : t.priority === 3 ? 'Low' : 'Med';
-        const due = t.dueDate ? ` · due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '';
-        lines.push(`• ${t.title || 'Untitled'} (${p}${due})`);
-      });
-      if (pending.length > 5) lines.push(`…and ${pending.length - 5} more.`);
-    } else {
-      lines.push('No pending tasks — all clear!');
-    }
-    return lines.join('\n');
-  } catch { return "I couldn't read your tasks right now."; }
-}
-
-async function _memoriesResponse() {
-  try {
-    const all   = await DB.memories.getAll();
-    const facts = all.filter(m => m.type !== 'session_summary');
-    if (!facts.length) return "No memories yet. They're saved when you share personal facts — try telling me something important.";
-    const recent = [...facts].sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1)).slice(0, 4);
-    const lines  = [`${facts.length} memor${facts.length !== 1 ? 'ies' : 'y'} stored:`];
-    recent.forEach(m => lines.push(`• ${m.content.slice(0, 90)}${m.content.length > 90 ? '…' : ''}`));
-    if (facts.length > 4) lines.push(`…and ${facts.length - 4} more in the Memories panel.`);
-    return lines.join('\n');
-  } catch { return "I couldn't access your memories right now."; }
-}
-
-async function _searchResponse(term) {
-  try {
-    const [notes, allTasks, mems] = await Promise.all([
-      DB.notes.search(term, 3),
-      DB.tasks.getAll(),
-      DB.memories.search(term, 3),
-    ]);
-    const tasks = allTasks.filter(t =>
-      t.title.toLowerCase().includes(term.toLowerCase()) ||
-      (t.description || '').toLowerCase().includes(term.toLowerCase())
-    ).slice(0, 3);
-    const total = notes.length + tasks.length + mems.length;
-    if (!total) return `Nothing found for "${term}". Try a different keyword.`;
-    const lines = [`Found ${total} result${total !== 1 ? 's' : ''} for "${term}":`];
-    if (notes.length) lines.push(`Notes: ${notes.map(n => `"${n.title || 'Untitled'}"`).join(', ')}`);
-    if (tasks.length) lines.push(`Tasks: ${tasks.map(t => `"${t.title || 'Untitled'}"`).join(', ')}`);
-    if (mems.length)  lines.push(`Memories: ${mems.map(m => `"${m.content.slice(0, 40)}"`).join(', ')}`);
-    return lines.join('\n');
-  } catch { return `Search failed for "${term}". Try the Search panel (Ctrl+K).`; }
-}
-
-async function _statusResponse() {
-  try {
-    const [noteCount, allTasks, memCount] = await Promise.all([
-      DB.notes.count(),
-      DB.tasks.getAll(),
-      DB.memories.count(),
-    ]);
-    const pending = allTasks.filter(t => t.status === 'pending');
-    const lines   = ['System status:'];
-    lines.push(`• ${noteCount} note${noteCount !== 1 ? 's' : ''}`);
-    lines.push(`• ${pending.length} pending task${pending.length !== 1 ? 's' : ''}`);
-    lines.push(`• ${memCount} memor${memCount !== 1 ? 'ies' : 'y'}`);
-    if (pending.length) {
-      const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
-      lines.push(`Next: "${top.title || 'Untitled'}"`);
-    }
-    lines.push(`• AI: ${hasGeminiKey() ? 'Gemini connected' : 'No key — see Settings'}`);
-    return lines.join('\n');
-  } catch { return "I couldn't get a summary right now."; }
-}
+// ── Note / task creators ──────────────────────────────────────
 
 async function _createNote(content) {
   try {
@@ -770,9 +1121,9 @@ async function _createNote(content) {
     const id    = await DB.notes.create({ title, content });
     Bus.emit(EVENTS.NOTE_CREATED, { id, title });
     await logEvent(EVENT_TYPES.NOTE_CREATED, `Note: ${title}`);
-    showToast('◇ Note saved', 'success', 2000);
-    return `Note saved: "${title}${content.length > 60 ? '…' : ''}". Find it in the Notes panel.`;
-  } catch { return "I couldn't create that note. Try the Notes panel."; }
+    showToast('◇ Saved', 'success', 2000);
+    return `Saved: "${title}${content.length > 60 ? '…' : ''}".`;
+  } catch { return "Couldn't save that note."; }
 }
 
 async function _createTask(content) {
@@ -781,9 +1132,9 @@ async function _createTask(content) {
     const id    = await DB.tasks.create({ title });
     Bus.emit(EVENTS.TASK_CREATED, { id, title });
     await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${title}`);
-    showToast('◉ Task added', 'success', 2000);
-    return `Task added: "${title}${content.length > 80 ? '…' : ''}". Find it in the Tasks panel.`;
-  } catch { return "I couldn't create that task. Try the Tasks panel."; }
+    showToast('◉ Added', 'success', 2000);
+    return `Added: "${title}${content.length > 80 ? '…' : ''}".`;
+  } catch { return "Couldn't add that task."; }
 }
 
 // ── Panel renderer ────────────────────────────────────────────
@@ -793,17 +1144,19 @@ export function renderConversationPanel() {
   if (!content) return;
 
   if (!_messages.length) {
-    const hasKey = hasGeminiKey();
     content.innerHTML = `
       <div class="conv-empty">
         <div class="conv-empty-icon">◎</div>
         <p class="conv-empty-title">Ask me anything</p>
-        <p class="conv-empty-desc">${hasKey ? 'Gemini AI is connected. Talk naturally.' : 'Add a Gemini API key in Settings for real AI. I can still help with your notes and tasks.'}</p>
+        <p class="conv-empty-desc">${hasGeminiKey()
+          ? 'Gemini connected. Talk naturally.'
+          : 'No Gemini key — but I can still analyze your tasks, memories, and priorities.'
+        }</p>
         <div class="conv-suggestions">
-          <button class="conv-suggest" data-q="What do I need to do today?">Today's tasks</button>
-          <button class="conv-suggest" data-q="give me a summary">System summary</button>
-          <button class="conv-suggest" data-q="show my notes">My notes</button>
-          <button class="conv-suggest" data-q="help">What can you do?</button>
+          <button class="conv-suggest" data-q="What should I focus on?">Focus</button>
+          <button class="conv-suggest" data-q="How's my progress?">Progress</button>
+          <button class="conv-suggest" data-q="Give me a summary">Summary</button>
+          <button class="conv-suggest" data-q="What have I been thinking about?">Patterns</button>
         </div>
       </div>`;
     content.querySelectorAll('.conv-suggest').forEach(btn => {
@@ -815,8 +1168,7 @@ export function renderConversationPanel() {
     return;
   }
 
-  const html = _messages.map(_renderMessage).join('');
-  content.innerHTML = `<div class="conv-list">${html}</div>`;
+  content.innerHTML = `<div class="conv-list">${_messages.map(_renderMessage).join('')}</div>`;
   requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
 }
 

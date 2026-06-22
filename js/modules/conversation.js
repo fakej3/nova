@@ -70,6 +70,7 @@ let _messages         = [];
 let _busy             = false;
 let _summarizing      = false;
 let _lastSummaryIndex = 0;
+let _conversationStarted = false;
 
 // ── Stop words (used in _extractKeywords for topic detection) ─
 
@@ -470,6 +471,10 @@ export async function handleUserMessage(rawText) {
   _saveHistory();
 
   Bus.emit(EVENTS.CHAT_MESSAGE_SENT, { preview: text.slice(0, 50) });
+  if (!_conversationStarted) {
+    _conversationStarted = true;
+    Bus.emit(EVENTS.CONVERSATION_STARTED, {});
+  }
   // Only switch to chat if not already there — switching to an already-open view closes it.
   if (State.get('activeView') !== 'chat' || !State.get('panelOpen')) {
     Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });

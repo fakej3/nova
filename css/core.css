@@ -479,7 +479,7 @@ input, textarea, select {
 }
 
 .ld-card-icon {
-  font-size: 9px;
+  font-size: 11px;
   color: rgba(var(--orb-color-rgb), 0.40);
   flex-shrink: 0;
   line-height: 1;
@@ -487,11 +487,11 @@ input, textarea, select {
 
 .ld-card-title {
   font-family: 'SF Mono', 'Courier New', monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.20em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(var(--orb-color-rgb), 0.32);
+  color: rgba(var(--orb-color-rgb), 0.40);
 }
 
 .ld-card-body {
@@ -510,7 +510,7 @@ input, textarea, select {
 }
 
 .ld-status-good {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--status-success);
   letter-spacing: 0.04em;
 }
@@ -526,7 +526,7 @@ input, textarea, select {
 }
 
 .ld-big-sub {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.06em;
   font-family: 'SF Mono', 'Courier New', monospace;
@@ -553,9 +553,9 @@ input, textarea, select {
 }
 
 .ld-task-lbl {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-muted);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   font-family: 'SF Mono', 'Courier New', monospace;
 }
@@ -605,11 +605,11 @@ input, textarea, select {
 
 #orb-status-text {
   font-family: 'SF Mono', 'Courier New', monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.20em;
   text-transform: uppercase;
-  color: rgba(var(--orb-color-rgb), 0.42);
+  color: rgba(var(--orb-color-rgb), 0.50);
   transition: color 0.4s ease;
 }
 
@@ -634,6 +634,107 @@ input, textarea, select {
 #app:has(#orb-container.state-offline)    #orb-status-text {
   color: var(--text-muted);
   opacity: 0.55;
+}
+
+/* ── Home Context Panel ─────────────────────────────────────── */
+
+#home-context {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px 18px;
+  background: rgba(var(--orb-color-rgb), 0.04);
+  border: 1px solid rgba(var(--orb-color-rgb), 0.10);
+  border-radius: 8px;
+  min-width: 260px;
+  max-width: 340px;
+  pointer-events: none;
+  position: relative;
+  z-index: 5;
+  animation: hc-fade-in 0.6s ease forwards;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#home-context.hc--hidden {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+@keyframes hc-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  line-height: 1.4;
+}
+
+.hc-label {
+  font-family: 'SF Mono', 'Courier New', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: rgba(var(--orb-color-rgb), 0.38);
+  text-transform: uppercase;
+  flex-shrink: 0;
+  min-width: 50px;
+}
+
+.hc-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-value--mem {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.hc-prog {
+  font-family: 'SF Mono', 'Courier New', monospace;
+  font-size: 10px;
+  color: rgba(var(--orb-color-rgb), 0.60);
+}
+
+.hc-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.hc-badge--overdue {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.hc-badge--today {
+  background: rgba(var(--orb-color-rgb), 0.12);
+  color: var(--accent-primary);
+  border: 1px solid rgba(var(--orb-color-rgb), 0.22);
+}
+
+.hc-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 4px 0;
 }
 
 /* ── Right Activity Feed ────────────────────────────────────── */
@@ -666,21 +767,21 @@ input, textarea, select {
   flex-direction: column;
   gap: 2px;
   font-family: 'SF Mono', 'Courier New', monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(var(--orb-color-rgb), 0.28);
+  color: rgba(var(--orb-color-rgb), 0.38);
   padding: 14px 16px 10px;
   border-bottom: 1px solid rgba(var(--orb-color-rgb), 0.07);
   flex-shrink: 0;
 }
 
 .sysr-header-sub {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 400;
-  letter-spacing: 0.08em;
-  color: rgba(var(--orb-color-rgb), 0.16);
+  letter-spacing: 0.06em;
+  color: rgba(var(--orb-color-rgb), 0.22);
   text-transform: none;
 }
 
@@ -728,6 +829,7 @@ input, textarea, select {
 .af-icon--mem     { color: rgba(168, 85, 247, 0.9); }
 .af-icon--chat    { color: rgba(var(--orb-color-rgb), 0.55); }
 .af-icon--online  { color: var(--status-success); }
+.af-icon--goal    { color: var(--accent-primary); }
 
 .af-body {
   flex: 1;
@@ -738,31 +840,31 @@ input, textarea, select {
 }
 
 .af-title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .af-sub {
-  font-size: 10px;               /* was 9px — unreadable with muted text */
+  font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .af-time {
   font-family: 'SF Mono', 'Courier New', monospace;
-  font-size: 10px;               /* was 9px */
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
   flex-shrink: 0;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   margin-top: 2px;
 }
 

@@ -31,6 +31,7 @@ import { setGeminiKey, getGeminiKey } from '../services/gemini.js';
 import { initOnboarding }              from '../ui/onboarding.js';
 import { initStarfield }               from '../ui/starfield.js';
 import { initActivityFeed }            from '../ui/activity-feed.js';
+import { initHomeContext }             from '../ui/home-context.js';
 
 // ── Boot ──────────────────────────────────────────────────────
 
@@ -127,13 +128,16 @@ async function boot() {
     // 13. First-run onboarding (after orb is idle so it doesn't interrupt boot)
     await initOnboarding();
 
-    // 14. Daily briefing — runs once per day, injects morning context into chat
+    // 14. Home context panel — surfaces focus/goal/memory below orb
+    initHomeContext().catch(e => console.warn('[HomeContext]', e.message));
+
+    // 15. Daily briefing — runs once per day, injects morning context into chat
     generateDailyBriefing().catch(e => console.warn('[Briefing]', e.message));
 
-    // 15. Evening review — runs once per evening (17:00–23:59), only if active today
+    // 16. Evening review — runs once per evening (17:00–23:59), only if active today
     generateEveningReview().catch(e => console.warn('[Evening]', e.message));
 
-    // 16. On-open notifications — show task alert if permission granted
+    // 17. On-open notifications — show task alert if permission granted
     DB.tasks.getAll().then(tasks => checkOnOpenNotifications(tasks)).catch(() => {});
 
   } catch (err) {

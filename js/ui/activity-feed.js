@@ -16,6 +16,7 @@ const ICONS = {
   MEM:    '◈',
   CHAT:   '◌',
   ONLINE: '●',
+  GOAL:   '◎',
 };
 
 function _time() {
@@ -61,10 +62,13 @@ export function initActivityFeed() {
   Bus.on(EVENTS.TASK_CREATED,   (d) => _addEntry('TASK',   'Task created',     d?.title || ''));
   Bus.on(EVENTS.TASK_UPDATED,   (d) => _addEntry('TASK',   'Task updated',     d?.title || ''));
   Bus.on(EVENTS.TASK_COMPLETED, (d) => _addEntry('TASK',   'Task completed',   d?.title || ''));
-  Bus.on(EVENTS.MEMORY_CREATED, ()  => _addEntry('MEM',    'Memory stored',    'New context saved'));
-  Bus.on(EVENTS.ONLINE,                ()  => _addEntry('ONLINE',  'Connection online', 'Network restored'));
-  Bus.on(EVENTS.OFFLINE,               ()  => _addEntry('SYSTEM',  'Connection lost',   'Local mode active'));
-  Bus.on(EVENTS.APP_READY,             ()  => _addEntry('SYSTEM',  'System ready',      'NOVA initialized'));
-  Bus.on(EVENTS.CHAT_MESSAGE_SENT,     (d) => _addEntry('CHAT',    'Message sent',      d?.preview || ''));
-  Bus.on(EVENTS.AI_RESPONSE_RECEIVED,  (d) => _addEntry('SYSTEM',  'NOVA',              d?.preview || ''));
+  Bus.on(EVENTS.MEMORY_CREATED,       (d) => _addEntry('MEM',    'Memory stored',         d?.content?.slice(0, 60) || 'New context saved'));
+  Bus.on(EVENTS.GOAL_CREATED,         (d) => _addEntry('GOAL',   'Goal set',              d?.title || ''));
+  Bus.on(EVENTS.GOAL_COMPLETED,       (d) => _addEntry('GOAL',   'Goal completed',        d?.title || ''));
+  Bus.on(EVENTS.ONLINE,               ()  => _addEntry('ONLINE',  'Connection online',    'Network restored'));
+  Bus.on(EVENTS.OFFLINE,              ()  => _addEntry('SYSTEM',  'Connection lost',      'Local mode active'));
+  Bus.on(EVENTS.APP_READY,            ()  => _addEntry('SYSTEM',  'System ready',         'NOVA initialized'));
+  Bus.on(EVENTS.CHAT_MESSAGE_SENT,    (d) => _addEntry('CHAT',    'Message sent',         d?.preview || ''));
+  Bus.on(EVENTS.CONVERSATION_STARTED, ()  => _addEntry('CHAT',    'Conversation started', 'Session active'));
+  Bus.on(EVENTS.AI_RESPONSE_RECEIVED, (d) => _addEntry('SYSTEM',  'NOVA',                 d?.preview || ''));
 }

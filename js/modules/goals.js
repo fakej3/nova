@@ -18,13 +18,15 @@ import { showToast } from '../ui/toast.js';
 
 export async function createGoal(title, description = '', targetDate = null) {
   const id = await DB.goals.create({ title, description, targetDate });
-  Bus.emit(EVENTS.GOAL_CREATED ?? 'goal:created', { id, title });
+  Bus.emit(EVENTS.GOAL_CREATED, { id, title });
   showToast(`◎ Goal set: "${title.slice(0, 40)}"`, 'success', 2500);
   return id;
 }
 
 export async function completeGoal(id) {
+  const goal = await DB.goals.get(id);
   await DB.goals.update(id, { status: 'completed' });
+  Bus.emit(EVENTS.GOAL_COMPLETED, { id, title: goal?.title || '' });
   showToast('◎ Goal completed', 'success', 2000);
 }
 

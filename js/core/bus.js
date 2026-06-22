@@ -76,7 +76,12 @@ export const EVENTS = {
   ORB_TAPPED:     'orb:tapped',
   ORB_LONG_PRESS: 'orb:long_press',
 
+  // Goals
+  GOAL_CREATED:   'goal:created',
+  GOAL_COMPLETED: 'goal:completed',
+
   // Chat / AI
-  CHAT_MESSAGE_SENT:    'chat:message_sent',
-  AI_RESPONSE_RECEIVED: 'chat:response_received',
+  CHAT_MESSAGE_SENT:      'chat:message_sent',
+  AI_RESPONSE_RECEIVED:   'chat:response_received',
+  CONVERSATION_STARTED:   'chat:conversation_started',
 };

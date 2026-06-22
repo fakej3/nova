@@ -25,7 +25,8 @@ import { renderDiagnosticsPanel }      from '../ui/diagnostics.js';
 import { renderSearchPanel }           from '../modules/search-panel.js';
 import { renderMemoriesPanel }         from '../modules/memories-panel.js';
 import { renderTimeline }              from '../modules/timeline.js';
-import { initConversation, handleUserMessage, renderConversationPanel, isBusy, generateDailyBriefing } from '../modules/conversation.js';
+import { initConversation, handleUserMessage, renderConversationPanel, isBusy, generateDailyBriefing, generateEveningReview } from '../modules/conversation.js';
+import { checkOnOpenNotifications } from '../services/notifications.js';
 import { setGeminiKey, getGeminiKey } from '../services/gemini.js';
 import { initOnboarding }              from '../ui/onboarding.js';
 import { initStarfield }               from '../ui/starfield.js';
@@ -128,6 +129,12 @@ async function boot() {
 
     // 14. Daily briefing — runs once per day, injects morning context into chat
     generateDailyBriefing().catch(e => console.warn('[Briefing]', e.message));
+
+    // 15. Evening review — runs once per evening (17:00–23:59), only if active today
+    generateEveningReview().catch(e => console.warn('[Evening]', e.message));
+
+    // 16. On-open notifications — show task alert if permission granted
+    DB.tasks.getAll().then(tasks => checkOnOpenNotifications(tasks)).catch(() => {});
 
   } catch (err) {
     console.error('[NOVA] Boot failed:', err);

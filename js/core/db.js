@@ -6,7 +6,7 @@
  */
 
 const DB_NAME    = 'nova_db';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let _db = null;
 
@@ -90,6 +90,14 @@ function openDB() {
         // Add relatedId index to memories for de-duplicated upserts (Phase 2.5)
         const memoriesStore = event.target.transaction.objectStore('memories');
         memoriesStore.createIndex('relatedId', 'relatedId', { unique: false });
+      }
+
+      if (oldVersion < 4) {
+        // ── goals (v4) ───────────────────────────────────────
+        const goals = db.createObjectStore('goals', { keyPath: 'id' });
+        goals.createIndex('status',     'status',     { unique: false });
+        goals.createIndex('targetDate', 'targetDate', { unique: false });
+        goals.createIndex('createdAt',  'createdAt',  { unique: false });
       }
     };
 
@@ -403,6 +411,57 @@ const memories = {
   },
 };
 
+// ── Goals ─────────────────────────────────────────────────────
+
+const goals = {
+  async create(data) {
+    const id = newId(), ts = now();
+    const goal = {
+      id,
+      title:         data.title         ?? '',
+      description:   data.description   ?? '',
+      targetDate:    data.targetDate     ?? null,
+      status:        data.status         ?? 'active',
+      linkedTaskIds: data.linkedTaskIds  ?? [],
+      createdAt:     ts,
+      updatedAt:     ts,
+    };
+    await storeReq('goals', 'readwrite', store => reqToPromise(store.add(goal)));
+    return id;
+  },
+
+  async get(id) {
+    return storeReq('goals', 'readonly', store => reqToPromise(store.get(id)));
+  },
+
+  async getAll() {
+    return storeReq('goals', 'readonly', store => reqToPromise(store.getAll()));
+  },
+
+  async getActive() {
+    return storeReq('goals', 'readonly', store =>
+      reqToPromise(store.index('status').getAll(IDBKeyRange.only('active')))
+    );
+  },
+
+  async update(id, changes) {
+    return txWrite('goals', store =>
+      reqToPromise(store.get(id)).then(existing => {
+        if (!existing) throw new Error(`Goal ${id} not found`);
+        return reqToPromise(store.put({ ...existing, ...changes, id, updatedAt: now() }));
+      })
+    );
+  },
+
+  async delete(id) {
+    return storeReq('goals', 'readwrite', store => reqToPromise(store.delete(id)));
+  },
+
+  async count() {
+    return storeReq('goals', 'readonly', store => reqToPromise(store.count()));
+  },
+};
+
 // ── Settings ──────────────────────────────────────────────────
 
 const settings = {
@@ -432,4 +491,5 @@ export const DB = {
   events,
   memories,
   settings,
+  goals,
 };

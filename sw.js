@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-v30';
+const CACHE_NAME = 'nova-v32';
 
 const ASSETS = [
   './index.html',
@@ -17,6 +17,8 @@ const ASSETS = [
   './js/services/memory.js',
   './js/services/context.js',
   './js/services/search.js',
+  './js/services/nlp.js',
+  './js/services/notifications.js',
   './js/ui/orb.js',
   './js/ui/theme.js',
   './js/ui/clock.js',
@@ -26,6 +28,7 @@ const ASSETS = [
   './js/ui/diagnostics.js',
   './js/modules/notes.js',
   './js/modules/tasks.js',
+  './js/modules/goals.js',
   './js/modules/search-panel.js',
   './js/modules/memories-panel.js',
   './js/modules/timeline.js',
@@ -58,6 +61,19 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      // Focus an existing NOVA window if one is open
+      const novaClient = list.find(c => c.url.includes(self.location.origin));
+      if (novaClient) return novaClient.focus();
+      // Otherwise open a new one
+      return clients.openWindow(self.location.origin + '/');
+    })
+  );
 });
 
 self.addEventListener('fetch', (event) => {

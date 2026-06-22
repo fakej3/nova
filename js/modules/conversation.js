@@ -1,21 +1,43 @@
 /**
- * NOVA Conversation System v4
+ * NOVA Conversation System v5
  *
- * v4 — Response engine upgrade:
- *   - Full NOVA persona: direct, aware, personal — not a generic AI assistant
- *   - Offline intelligence: task analysis, memory patterns, priorities, recommendations
- *   - Context awareness: time of day, overdue tasks, streak, recurring topics
- *   - Natural continuity language: "Last week you mentioned…" not "I found in memory…"
- *   - Rich Gemini system prompt with progress + pattern data
+ * Phases implemented in this version:
  *
- * Message routing (unchanged):
- *   1. Local fast intents  (clear, time, date, note:, task:)
- *   2. Gemini API          (when key configured)
- *   3. Offline intelligence (no key / offline)
+ * Phase 1 — Natural Language Actions
+ *   NL due dates (tomorrow, Friday, in 3 days, June 30…)
+ *   NL task creation (remind me to, I need to, don't forget…)
+ *   NL memory creation (remember that, my exam is, I prefer…)
+ *   NL goal creation (goal: …, I'm working toward…)
+ *   Commitment detection (I'll finish…, I'm going to…)
  *
- * Action markers (Gemini only):
- *   [SAVE_MEMORY: "…"]  [CREATE_TASK: "…"]
- *   [CREATE_NOTE: "title | content"]  [COMPLETE_TASK: "id or title"]
+ * Phase 2 — Proactive NOVA
+ *   Opening briefing with goals + commitment checks
+ *   Dynamic idle suggestions from real user data
+ *   Commitment storage and unresolved tracking in briefings
+ *
+ * Phase 3 — Goals System
+ *   Goals injected into every Gemini context and offline responses
+ *   Progress computed from linked tasks
+ *
+ * Phase 4 — Daily Retention
+ *   Morning review (once per day)
+ *   Evening review (once per evening, 17:00–23:59)
+ *   Weekly summary (once per 7 days)
+ *
+ * Phase 5 — Smarter Memory
+ *   Synonym expansion before keyword matching
+ *   Scoring via nlp.scoreMemory
+ *
+ * Routes:
+ *   1. Fast local intents  (clear, time, date, goal:, note:, task:)
+ *   2. NL intents          (high-confidence task / memory / goal / commitment)
+ *   3. Gemini API          (when key configured)
+ *   4. Offline intelligence (no key / offline)
+ *
+ * Action markers (Gemini):
+ *   [SAVE_MEMORY: "…"] [CREATE_TASK: "…"]
+ *   [CREATE_NOTE: "title | content"] [COMPLETE_TASK: "id or title"]
+ *   [CREATE_GOAL: "title"] [COMPLETE_GOAL: "title substring"]
  */
 
 import { DB }                       from '../core/db.js';
@@ -25,18 +47,31 @@ import { setOrbState }              from '../ui/orb.js';
 import { showToast }                from '../ui/toast.js';
 import { logEvent, EVENT_TYPES }    from '../services/events.js';
 import { callGemini, hasGeminiKey } from '../services/gemini.js';
+import {
+  parseDueDate, detectTaskIntent, detectMemoryIntent,
+  detectCommitment, detectGoalIntent, expandKeywords, scoreMemory,
+} from '../services/nlp.js';
+import {
+  createGoal, getGoalsWithProgress, formatGoalsBrief, formatGoalsForContext,
+  findRelatedGoal, linkTaskToGoal,
+} from './goals.js';
+import { trackInteraction } from '../services/notifications.js';
+
+// ── Constants ─────────────────────────────────────────────────
 
 const MAX_HISTORY      = 100;
 const LS_KEY           = 'nova_conversation';
 const LS_SESSION_INDEX = 'nova_session_msg_index';
 const LS_BRIEFING_DATE = 'nova_briefing_date';
+const LS_EVENING_DATE  = 'nova_evening_date';
+const LS_WEEKLY_DATE   = 'nova_weekly_date';
 
 let _messages         = [];
 let _busy             = false;
 let _summarizing      = false;
 let _lastSummaryIndex = 0;
 
-// ── Keyword stop-words ────────────────────────────────────────
+// ── Stop words (used in _extractKeywords for topic detection) ─
 
 const STOP_WORDS = new Set([
   'i','me','my','myself','we','our','ours','you','your','yours','he','him',
@@ -61,178 +96,99 @@ export function initConversation() {
   try {
     const idx = localStorage.getItem(LS_SESSION_INDEX);
     _lastSummaryIndex = idx ? parseInt(idx, 10) : 0;
-    if (_lastSummaryIndex > _messages.length) {
+    if (_lastSummaryIndex > _messages.length)
       _lastSummaryIndex = Math.max(0, _messages.length - 5);
-    }
   } catch { _lastSummaryIndex = 0; }
 
+  // Session summary when navigating away from chat
   Bus.on(EVENTS.VIEW_CHANGED, ({ view } = {}) => {
-    if (view !== 'chat') {
-      _maybeGenerateSessionSummary().catch(e =>
-        console.warn('[Session]', e.message)
-      );
-    }
+    if (view !== 'chat')
+      _maybeGenerateSessionSummary().catch(e => console.warn('[Session]', e.message));
   });
 }
 
-export function isBusy()  { return _busy; }
+export function isBusy() { return _busy; }
 
 export function clearConversation() {
-  _messages         = [];
-  _lastSummaryIndex = 0;
+  _messages = []; _lastSummaryIndex = 0;
   _saveHistory();
   try { localStorage.removeItem(LS_SESSION_INDEX); } catch {}
 }
 
-// ── Utility: time + relative language ────────────────────────
+// ── Phase 1: NL intent handler ────────────────────────────────
+// Runs BEFORE Gemini for high-confidence intents — fast, local, reliable.
 
-function _timeContext() {
-  const h = new Date().getHours();
-  if (h < 6)  return 'late night';
-  if (h < 12) return 'morning';
-  if (h < 14) return 'midday';
-  if (h < 18) return 'afternoon';
-  if (h < 22) return 'evening';
-  return 'late night';
-}
+async function _tryNLIntent(text) {
+  // Goal creation
+  const goalIntent = detectGoalIntent(text);
+  if (goalIntent.isGoal && goalIntent.confidence === 'high') {
+    const { clean: cleanTitle, date, phrase } = parseDueDate(goalIntent.title);
+    const id = await createGoal(cleanTitle, '', date);
+    await logEvent(EVENT_TYPES.TASK_CREATED, `Goal: ${cleanTitle}`);
+    const duePart = phrase ? ` · target: ${phrase}` : '';
+    return `Goal set: "${cleanTitle}"${duePart}. Link tasks to it by mentioning this goal when creating them.`;
+  }
 
-function _relativeTime(isoStr) {
-  if (!isoStr) return 'recently';
-  const diff = Date.now() - new Date(isoStr).getTime();
-  const days = Math.floor(diff / 86400000);
-  if (diff < 3600000)  return 'earlier today';
-  if (days === 0)      return 'earlier today';
-  if (days === 1)      return 'yesterday';
-  if (days < 7)        return `${days} days ago`;
-  if (days < 14)       return 'last week';
-  if (days < 30)       return `${Math.floor(days / 7)} weeks ago`;
-  return `${Math.floor(days / 30)} months ago`;
-}
+  // Task creation with NL due date
+  const taskIntent = detectTaskIntent(text);
+  if (taskIntent.isTask && taskIntent.confidence === 'high') {
+    const { clean: cleanTitle, date, phrase } = parseDueDate(taskIntent.title);
+    const title  = (cleanTitle || taskIntent.title).trim().replace(/\.$/, '');
+    const taskId = await DB.tasks.create({ title: title.slice(0, 80), dueDate: date });
+    Bus.emit(EVENTS.TASK_CREATED, { id: taskId, title });
+    await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${title}`);
+    showToast(`◉ Task: "${title.slice(0, 40)}"`, 'success', 2500);
 
-function _taskAge(task) {
-  const days = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 86400000);
-  if (days === 0) return 'added today';
-  if (days === 1) return '1 day old';
-  return `${days} days old`;
-}
-
-// ── Utility: pattern detection ────────────────────────────────
-
-function _detectRecurringTopics(memories, minCount = 2) {
-  const freq    = {};
-  const lastTs  = {};
-  const skip    = new Set([
-    'the','and','for','that','this','with','have','from','about','been',
-    'they','will','your','what','when','user','nova','just','also','more',
-    'some','into','than','then','were','said','like','even','well','back',
-    'would','could','should','task','note','memory','mentioned','session',
-  ]);
-
-  for (const m of memories) {
-    if (m.type === 'session_summary') continue;
-    const words = m.content.toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 3 && !skip.has(w));
-
-    for (const w of new Set(words)) {
-      freq[w]   = (freq[w]   || 0) + 1;
-      if (!lastTs[w] || m.timestamp > lastTs[w]) lastTs[w] = m.timestamp;
+    // Auto-link to a matching goal if one exists
+    const relGoal = await findRelatedGoal(title);
+    let goalNote  = '';
+    if (relGoal) {
+      await linkTaskToGoal(relGoal.id, taskId);
+      goalNote = ` Linked to goal: "${relGoal.title}".`;
     }
+
+    const duePart = phrase ? ` Due: ${phrase}.` : '';
+    return `Added: "${title}".${duePart}${goalNote}`;
   }
 
-  return Object.entries(freq)
-    .filter(([, c]) => c >= minCount)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([topic, count]) => ({ topic, count, lastMentioned: lastTs[topic] }));
-}
+  // Memory creation
+  const memIntent = detectMemoryIntent(text);
+  if (memIntent.isMemory && memIntent.confidence === 'high') {
+    // Also check if there's a date — could imply a task too
+    const { date, phrase } = parseDueDate(text);
+    const id = await DB.memories.create({
+      type: 'ai_fact', content: text, source: 'user', tags: [],
+    });
+    Bus.emit(EVENTS.MEMORY_CREATED, { id, content: text });
+    await logEvent(EVENT_TYPES.MEMORY_CREATED, `Memory: ${text.slice(0, 60)}`);
+    showToast('◈ Remembered', 'success', 2000);
 
-function _computeStreak(completedTasks) {
-  const dates = [...new Set(
-    completedTasks
-      .filter(t => t.completedAt)
-      .map(t => new Date(t.completedAt).toDateString()),
-  )].sort((a, b) => new Date(a) - new Date(b));
-
-  if (!dates.length) return 0;
-
-  const today     = new Date().toDateString();
-  const yesterday = new Date(Date.now() - 86400000).toDateString();
-  const last      = dates[dates.length - 1];
-  if (last !== today && last !== yesterday) return 0;
-
-  let streak = 1;
-  for (let i = dates.length - 2; i >= 0; i--) {
-    const gap = (new Date(dates[i + 1]) - new Date(dates[i])) / 86400000;
-    if (gap === 1) streak++;
-    else break;
+    // If it has a date, offer to create a task
+    const follow = phrase
+      ? ` Want me to create a task with a ${phrase} due date?`
+      : '';
+    return `Got it.${follow}`;
   }
-  return streak;
+
+  return null; // fall through to Gemini / offline
 }
 
-// ── Shared data loader (used by offline functions) ────────────
-
-async function _loadUserData() {
-  const [allTasks, allNotes, allMems] = await Promise.all([
-    DB.tasks.getAll(),
-    DB.notes.getAll(),
-    DB.memories.getAll(),
-  ]);
-
-  const now        = new Date();
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const weekAgo    = new Date(now - 7 * 86400000);
-
-  const pending   = allTasks.filter(t => t.status === 'pending');
-  const completed = allTasks.filter(t => t.status === 'completed');
-  const overdue   = pending.filter(t => t.dueDate && new Date(t.dueDate) < todayStart);
-  const dueToday  = pending.filter(t => {
-    if (!t.dueDate) return false;
-    const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
-    return d.getTime() === todayStart.getTime();
-  });
-  const highPri   = pending.filter(t => t.priority === 1 && !overdue.includes(t));
-  const stale     = pending.filter(t =>
-    new Date(t.createdAt) < weekAgo && !overdue.includes(t)
-  );
-  const completedThisWeek = completed.filter(t =>
-    t.completedAt && new Date(t.completedAt) > weekAgo
-  );
-  const completedToday = completed.filter(t =>
-    t.completedAt && new Date(t.completedAt) >= todayStart
-  );
-
-  const facts    = allMems.filter(m => m.type !== 'session_summary');
-  const sessions = allMems
-    .filter(m => m.type === 'session_summary')
-    .sort((a, b) => b.timestamp > a.timestamp ? 1 : -1)
-    .slice(0, 3);
-
-  const recurringTopics = _detectRecurringTopics(facts);
-  const streak          = _computeStreak(completed);
-
-  return {
-    pending, completed, overdue, dueToday, highPri, stale,
-    completedThisWeek, completedToday, allNotes, facts, sessions,
-    recurringTopics, streak, now,
-  };
-}
-
-// ── Feature 1: Daily Briefing ─────────────────────────────────
+// ── Phase 4: Daily / Evening / Weekly reviews ─────────────────
 
 export async function generateDailyBriefing() {
-  const today    = new Date().toDateString();
-  const lastDate = localStorage.getItem(LS_BRIEFING_DATE);
-  if (lastDate === today) return;
-
+  const today = new Date().toDateString();
+  if (localStorage.getItem(LS_BRIEFING_DATE) === today) {
+    // Check for weekly summary on the same pass
+    await _maybeGenerateWeeklySummary();
+    return;
+  }
   try {
-    const data = await _loadUserData();
+    const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
     setOrbState('thinking');
 
     const briefing = hasGeminiKey()
-      ? await _geminiDailyBriefing(data)
-      : _localDailyBriefing(data);
+      ? await _geminiBriefing('morning', data, goals)
+      : _localBriefing('morning', data, goals);
 
     if (!briefing) { setOrbState('idle'); return; }
 
@@ -243,140 +199,273 @@ export async function generateDailyBriefing() {
     setOrbState('responding');
     Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });
     _renderIfOpen();
-
     await _delay(600);
     setOrbState('success');
-
+    await _maybeGenerateWeeklySummary();
   } catch (e) {
     console.warn('[Briefing]', e.message);
     setOrbState('idle');
   }
 }
 
-async function _geminiDailyBriefing(data) {
-  const { pending, overdue, dueToday, completedThisWeek, streak,
-          facts, sessions, recurringTopics } = data;
+export async function generateEveningReview() {
+  const hour = new Date().getHours();
+  if (hour < 17 || hour > 23) return;                               // only 5pm–midnight
+
+  const today = new Date().toDateString();
+  if (localStorage.getItem(LS_EVENING_DATE) === today) return;
+
+  // Only generate if the user has been active today (has messages today)
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const activeToday = _messages.some(m => m.ts > todayStart.getTime());
+  if (!activeToday) return;
+
+  try {
+    const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
+    const review = hasGeminiKey()
+      ? await _geminiBriefing('evening', data, goals)
+      : _localBriefing('evening', data, goals);
+
+    if (!review) return;
+    _addMessage('nova', review);
+    _saveHistory();
+    localStorage.setItem(LS_EVENING_DATE, today);
+    _renderIfOpen();
+  } catch (e) {
+    console.warn('[Evening]', e.message);
+  }
+}
+
+async function _maybeGenerateWeeklySummary() {
+  const lastWeekly    = localStorage.getItem(LS_WEEKLY_DATE);
+  const sevenDaysAgo  = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  if (lastWeekly && new Date(lastWeekly).getTime() > sevenDaysAgo) return;
+
+  try {
+    const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
+    const summary = hasGeminiKey()
+      ? await _geminiWeeklySummary(data, goals)
+      : _localWeeklySummary(data, goals);
+
+    if (!summary) return;
+    _addMessage('nova', summary);
+    _saveHistory();
+    localStorage.setItem(LS_WEEKLY_DATE, new Date().toISOString());
+    _renderIfOpen();
+  } catch (e) {
+    console.warn('[Weekly]', e.message);
+  }
+}
+
+// ── Briefing builders ─────────────────────────────────────────
+
+async function _geminiBriefing(type, data, goals) {
+  const {
+    pending, overdue, dueToday, stale, completedThisWeek, completedToday,
+    streak, facts, sessions, recurringTopics,
+  } = data;
+
   const userName = State.get('userName') || '';
   const dateStr  = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
-  const taskLines = pending.length
-    ? pending.slice(0, 8).map(t => {
-        const pri  = t.priority === 1 ? 'HIGH' : t.priority === 3 ? 'LOW' : 'MED';
-        const due  = t.dueDate
-          ? ` (due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
-          : '';
-        const flag = overdue.includes(t) ? ' [OVERDUE]' : dueToday.includes(t) ? ' [DUE TODAY]' : '';
-        return `• [${pri}]${flag} ${t.title}${due} — ${_taskAge(t)}`;
-      }).join('\n')
-    : 'No pending tasks.';
+  const taskLines = pending.slice(0, 8).map(t => {
+    const pri  = t.priority === 1 ? 'HIGH' : t.priority === 3 ? 'LOW' : 'MED';
+    const due  = t.dueDate
+      ? ` (due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})`
+      : '';
+    const flag = overdue.includes(t) ? ' [OVERDUE]' : dueToday.includes(t) ? ' [DUE TODAY]' : '';
+    return `• [${pri}]${flag} ${t.title}${due} — ${_taskAge(t)}`;
+  }).join('\n') || 'No pending tasks.';
 
-  const factLines = facts.slice(0, 5).map(m =>
-    `• ${m.content.slice(0, 100)} (${_relativeTime(m.timestamp)})`
-  ).join('\n') || 'None.';
+  const commitments = await _getUnresolvedCommitments(data);
+  const commitLines = commitments.length
+    ? commitments.map(c => `• ${c}`).join('\n')
+    : 'None.';
 
-  const sessionLines = sessions.map(s =>
-    `• ${s.content.slice(0, 150)}`
-  ).join('\n') || 'No previous sessions.';
+  const isEvening   = type === 'evening';
+  const typeLabel   = isEvening ? 'evening check-in' : 'morning briefing';
+  const progressNote = [
+    completedToday.length   ? `${completedToday.length} done today` : '',
+    completedThisWeek.length ? `${completedThisWeek.length} this week` : '',
+    streak > 1               ? `${streak}-day streak` : '',
+  ].filter(Boolean).join(', ') || 'No completions yet';
 
-  const topicLines = recurringTopics.length
-    ? recurringTopics.map(t => `• "${t.topic}" mentioned ${t.count}x (last: ${_relativeTime(t.lastMentioned)})`).join('\n')
-    : 'None detected.';
-
-  const progressNote = completedThisWeek.length
-    ? `${completedThisWeek.length} tasks completed this week${streak > 1 ? `, ${streak}-day streak` : ''}.`
-    : 'No completions this week yet.';
-
-  const sysPrompt = _novaPersonaPrompt();
-
-  const userPrompt = `Generate my morning briefing for ${dateStr}${userName ? `, ${userName}` : ''}.
+  const userPrompt = `Generate my ${typeLabel} for ${dateStr}${userName ? `, ${userName}` : ''}.
 
 TASKS (${pending.length} pending, ${overdue.length} overdue, ${dueToday.length} due today):
 ${taskLines}
 
+GOALS:
+${formatGoalsForContext(goals)}
+
 PROGRESS: ${progressNote}
+UNRESOLVED COMMITMENTS:
+${commitLines}
 
-RECURRING TOPICS (from memory):
-${topicLines}
+RECURRING TOPICS: ${recurringTopics.slice(0, 3).map(t => `"${t.topic}" (${t.count}x)`).join(', ') || 'none'}
+PREVIOUS SESSIONS: ${sessions[0]?.content?.slice(0, 150) || 'none'}
 
-RECENT FACTS:
-${factLines}
+Rules:
+- Under 120 words.
+- ${isEvening ? 'Review the day: what got done, what didn\'t. Set tomorrow\'s intention.' : 'Lead with overdue/urgent. Reference a goal. End with one focus question.'}
+- Call out unresolved commitments directly.
+- No action markers. Speak as NOVA.`;
 
-PREVIOUS SESSIONS:
-${sessionLines}
-
-Rules for this briefing:
-- Under 100 words.
-- Lead with what's most urgent (overdue > due today > high priority).
-- Reference a recurring topic if it's relevant to the tasks.
-- End with one specific question or focus prompt.
-- Do NOT use action markers.
-- Speak as NOVA, not as a generic assistant.`;
-
-  const raw = await callGemini([{ role: 'user', text: userPrompt }], sysPrompt);
+  const raw = await callGemini([{ role: 'user', text: userPrompt }], _novaPersonaPrompt());
   return raw.replace(ACTION_RE, '').trim();
 }
 
-function _localDailyBriefing(data) {
-  const { pending, overdue, dueToday, highPri, stale,
-          completedToday, completedThisWeek, streak,
-          facts, sessions, recurringTopics } = data;
+function _localBriefing(type, data, goals) {
+  const {
+    pending, overdue, dueToday, highPri, stale,
+    completedToday, completedThisWeek, streak, sessions, recurringTopics,
+  } = data;
 
   const userName = State.get('userName') || '';
-  const tc       = _timeContext();
-  const greet    = userName
-    ? `Good ${tc}, ${userName}.`
-    : `Good ${tc}.`;
+  const isEvening = type === 'evening';
+  const tc        = _timeContext();
+  const greet     = userName ? `Good ${tc}, ${userName}.` : `Good ${tc}.`;
 
   const lines = [greet, ''];
 
-  // Task state
-  if (!pending.length) {
-    lines.push("No open tasks. The slate is clear.");
+  if (isEvening) {
+    // Evening: day review
+    if (completedToday.length) {
+      lines.push(`${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} done today.`);
+    } else {
+      lines.push('Nothing completed today yet.');
+    }
+    if (overdue.length) {
+      lines.push(`${overdue.length} task${overdue.length !== 1 ? 's' : ''} still overdue — carry them into tomorrow?`);
+    }
+    if (streak > 1) lines.push(`${streak}-day streak — don't break it.`);
+    lines.push('\nWhat did you learn or decide today?');
   } else {
+    // Morning: forward-looking
     if (overdue.length) {
       const names = overdue.slice(0, 2).map(t => `"${t.title}"`).join(', ');
-      lines.push(`${overdue.length} overdue: ${names}${overdue.length > 2 ? ` +${overdue.length - 2} more` : ''}.`);
+      lines.push(`${overdue.length} overdue: ${names}${overdue.length > 2 ? ` +${overdue.length - 2}` : ''}.`);
     }
     if (dueToday.length) {
       lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
     }
-    // Top priority recommendation
-    const top = overdue[0] || dueToday[0] || highPri[0] ||
-      [...pending].sort((a, b) => a.priority - b.priority)[0];
+    const top = overdue[0] || dueToday[0] || highPri[0]
+      || [...pending].sort((a, b) => a.priority - b.priority)[0];
     if (top) {
       const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
-      lines.push(`\nStart with: "${top.title}"${age > 3 ? ` — ${age} days old` : ''}.`);
+      lines.push(`\nStart with: "${top.title}"${age > 3 ? ` — ${age} days open` : ''}.`);
     }
   }
 
-  // Progress
-  if (completedToday.length) {
-    lines.push(`\n${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} already done today.`);
-  }
-  if (streak > 1) {
-    lines.push(`${streak}-day completion streak — keep it going.`);
+  // Goals
+  if (goals.length) {
+    const brief = formatGoalsBrief(goals);
+    lines.push(`\nGoals: ${brief}.`);
   }
 
-  // Recurring topics
+  // Recurring topic
   if (recurringTopics.length) {
-    const top = recurringTopics[0];
-    lines.push(`\nYou've been focused on "${top.topic}" lately (${top.count}x in memory).`);
+    lines.push(`You've been thinking about "${recurringTopics[0].topic}" lately.`);
   }
 
-  // Stale tasks callout
+  // Last session context
+  if (sessions.length && !isEvening) {
+    lines.push(`\nLast time: ${sessions[0].content.slice(0, 90)}${sessions[0].content.length > 90 ? '…' : ''}`);
+  }
+
   if (stale.length && !overdue.length) {
-    lines.push(`${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been sitting untouched for over a week.`);
+    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been open over a week.`);
   }
 
-  // Session context
-  if (sessions.length) {
-    lines.push(`\nLast session: ${sessions[0].content.slice(0, 100)}${sessions[0].content.length > 100 ? '…' : ''}`);
-  }
-
-  lines.push('\nWhat are you working on today?');
+  lines.push(isEvening ? '\nGet some rest.' : '\nWhat are you working on today?');
   return lines.join('\n');
+}
+
+async function _geminiWeeklySummary(data, goals) {
+  const { completedThisWeek, pending, overdue, recurringTopics, sessions } = data;
+  const userName = State.get('userName') || '';
+
+  const userPrompt = `Generate a weekly review${userName ? ` for ${userName}` : ''}.
+
+WEEK OVERVIEW:
+- ${completedThisWeek.length} tasks completed
+- ${pending.length} still pending, ${overdue.length} overdue
+
+GOALS:
+${formatGoalsForContext(goals)}
+
+TOP RECURRING TOPICS: ${recurringTopics.slice(0, 5).map(t => `"${t.topic}" (${t.count}x)`).join(', ') || 'none'}
+
+RECENT SESSIONS SUMMARY: ${sessions.slice(0, 2).map(s => s.content.slice(0, 120)).join(' | ') || 'none'}
+
+Write a concise weekly review (under 150 words). Include: what got done, what's slipping, goal progress, a recommended focus theme for next week. Speak as NOVA, not a generic assistant. No action markers.`;
+
+  const raw = await callGemini([{ role: 'user', text: userPrompt }], _novaPersonaPrompt());
+  const summary = raw.replace(ACTION_RE, '').trim();
+  return `**Weekly Review**\n\n${summary}`;
+}
+
+function _localWeeklySummary(data, goals) {
+  const { completedThisWeek, pending, overdue, recurringTopics, streak } = data;
+  const lines = ['**Weekly Review**', ''];
+
+  lines.push(`${completedThisWeek.length} task${completedThisWeek.length !== 1 ? 's' : ''} completed this week.`);
+  if (overdue.length) lines.push(`${overdue.length} overdue — needs attention.`);
+  if (streak > 1)     lines.push(`${streak}-day completion streak.`);
+
+  if (goals.length) {
+    lines.push('');
+    lines.push('Goals:');
+    goals.forEach(g => lines.push(`• "${g.title}" — ${g.progress}%`));
+  }
+
+  if (recurringTopics.length) {
+    lines.push('');
+    lines.push(`Top themes: ${recurringTopics.slice(0, 3).map(t => `"${t.topic}"`).join(', ')}.`);
+  }
+
+  const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
+  if (top) lines.push(`\nFocus for next week: "${top.title}".`);
+
+  return lines.join('\n');
+}
+
+// ── Commitment tracking ───────────────────────────────────────
+
+async function _saveCommitment(action, timeframe) {
+  const content = timeframe
+    ? `User committed to: ${action} (${timeframe})`
+    : `User committed to: ${action}`;
+  await DB.memories.create({ type: 'commitment', content, source: 'user', tags: ['commitment'] });
+}
+
+async function _getUnresolvedCommitments(data) {
+  try {
+    const commitments = await DB.memories.getByType('commitment');
+    if (!commitments.length) return [];
+
+    const { completed } = data;
+    const now = Date.now();
+    const unresolved = [];
+
+    for (const c of commitments) {
+      // Skip commitments older than 14 days
+      if (now - new Date(c.timestamp).getTime() > 14 * 86400000) continue;
+
+      const action = c.content.replace(/^User committed to:\s*/i, '');
+      const words  = action.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+
+      // Check if a completed task matches
+      const fulfilled = completed.some(t =>
+        words.some(w => t.title.toLowerCase().includes(w))
+      );
+      if (!fulfilled) unresolved.push(action.slice(0, 80));
+    }
+
+    return unresolved.slice(0, 3);
+  } catch { return []; }
 }
 
 // ── Main message handler ──────────────────────────────────────
@@ -394,20 +483,38 @@ export async function handleUserMessage(rawText) {
   _renderIfOpen();
   setOrbState('thinking');
 
+  // Track interaction for notification permission timing
+  trackInteraction();
+
+  // Side-effect: detect and store commitments regardless of routing path
+  const commitment = detectCommitment(text);
+  if (commitment.isCommitment) {
+    _saveCommitment(commitment.action, commitment.timeframe).catch(() => {});
+  }
+
   try {
     let response;
-    const local = await _tryLocalIntent(text);
 
-    if (local !== null) {
-      response = local;
-    } else if (hasGeminiKey()) {
-      const context      = await _buildContext(text);
-      const systemPrompt = _buildSystemPrompt(context);
-      const history      = _messages.slice(-24);
-      const raw          = await callGemini(history, systemPrompt);
-      response           = await _parseActions(raw);
+    // Route 1: fast local intents
+    const fast = await _tryLocalIntent(text);
+    if (fast !== null) {
+      response = fast;
     } else {
-      response = await _offlineResponse(text);
+      // Route 2: high-confidence NL intents (task / memory / goal)
+      const nl = await _tryNLIntent(text);
+      if (nl !== null) {
+        response = nl;
+      } else if (hasGeminiKey()) {
+        // Route 3: Gemini
+        const context      = await _buildContext(text);
+        const systemPrompt = _buildSystemPrompt(context);
+        const history      = _messages.slice(-24);
+        const raw          = await callGemini(history, systemPrompt);
+        response           = await _parseActions(raw);
+      } else {
+        // Route 4: offline intelligence
+        response = await _offlineResponse(text);
+      }
     }
 
     setOrbState('responding');
@@ -437,113 +544,118 @@ export async function handleUserMessage(rawText) {
   }
 }
 
-// ── Local intent router ───────────────────────────────────────
+// ── Local intent router (fast, no DB) ────────────────────────
 
 async function _tryLocalIntent(text) {
   const q = text.toLowerCase().trim();
 
   if (/^(clear|reset|new chat|start over)$/.test(q)) {
-    _messages = _messages.slice(-1);
-    _saveHistory();
-    return 'Cleared.';
+    _messages = _messages.slice(-1); _saveHistory(); return 'Cleared.';
   }
   if (/^(what time is it|what('s| is) the time|current time|time\??)$/.test(q)) {
     return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
   if (/^(what('s| is) (today|the date)|today's date|date\??)$/.test(q)) {
-    return new Date().toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    });
+    return new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  // Shorthand creators
+  const goalCmd = text.match(/^goal:\s+(.+)/i);
+  if (goalCmd) {
+    const { clean, date, phrase } = parseDueDate(goalCmd[1].trim());
+    const id = await createGoal(clean || goalCmd[1].trim(), '', date);
+    return `Goal set: "${clean}"${phrase ? ` · target: ${phrase}` : ''}.`;
   }
 
   const noteCmd = text.match(/^note:\s+(.+)/i);
   if (noteCmd) return _createNote(noteCmd[1].trim());
 
   const taskCmd = text.match(/^task:\s+(.+)/i);
-  if (taskCmd) return _createTask(taskCmd[1].trim());
+  if (taskCmd) {
+    const raw = taskCmd[1].trim();
+    const { clean, date, phrase } = parseDueDate(raw);
+    return _createTaskWithDate(clean || raw, date, phrase);
+  }
 
   return null;
 }
 
-// ── NOVA Persona (used in Gemini system prompts) ──────────────
+// ── NOVA Persona ──────────────────────────────────────────────
 
 function _novaPersonaPrompt() {
-  const userName = State.get('userName') || '';
   const aiName   = State.get('aiName')   || 'NOVA';
+  const userName = State.get('userName') || '';
   const tc       = _timeContext();
-  const dateStr  = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  });
+  const dateStr  = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const timeStr  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return `You are ${aiName} — a personal operating system, not a chatbot.
-${userName ? `The user's name is ${userName}.` : ''}
-Current time: ${timeStr} (${tc}) on ${dateStr}.
+${userName ? `User: ${userName}.` : ''}
+Time: ${timeStr} (${tc}), ${dateStr}.
 
-VOICE AND STYLE:
-- Direct. No filler. No "Certainly!", "Of course!", "Great question!", "As an AI…"
-- Confident. You have the user's data. Use it without hedging.
-- Personal. Reference their actual tasks, notes, and memories by name.
-- Proactive. Surface what matters — don't just answer the literal question.
-- Brief. Under 100 words unless asked for detail.
-- One or two short paragraphs, or a tight list. Never bullet-dumps.
+VOICE:
+- Direct. No filler. Never say "Certainly!", "Of course!", "Great question!", "As an AI…"
+- Confident. Use the user's actual data. No hedging.
+- Personal. Reference tasks, goals, and memories by name.
+- Proactive. Surface what matters beyond the literal question.
+- Brief. Under 100 words unless detail is requested.
 
-HOW TO REFERENCE MEMORY AND HISTORY:
-- Never say: "I found in your memory…" / "According to your notes…" / "Based on your data…"
-- Say instead: "Last week you mentioned…" / "You've been working on this for a few days." / "This keeps coming up — you've noted it three times."
-- Use relative time: yesterday, last week, three days ago, earlier this month.
+MEMORY LANGUAGE:
+- Never: "I found in your memory…" / "According to your notes…"
+- Always: "Last week you mentioned…" / "You've been working on this for 3 days." / "You've noted this twice."
+- Use relative time: yesterday, last week, 3 days ago.
 
-HOW TO HANDLE TASKS:
-- Overdue items always get mentioned first.
-- When asked for focus or priority, give ONE specific recommendation with a reason.
-- Notice task age: a 10-day-old pending task deserves a flag.
-- If a task has been mentioned in memories AND is still pending, call that out.
+TASKS + GOALS:
+- Overdue first, always.
+- Specific recommendation with reason when asked for focus.
+- Flag tasks open 7+ days. Notice when a task matches an active goal.
 
-HOW TO HANDLE PATTERNS:
-- If a topic appears repeatedly in memory, say so directly.
-- Notice unfinished commitments: "You said you'd finish X — still pending."
-- Reference streaks positively: "Three days of completions — don't break it."
+PATTERNS:
+- If a topic recurs, say so directly.
+- Call out unresolved commitments: "You said you'd finish X — still pending."
+- Acknowledge streaks.
 
-WHAT TO AVOID:
-- Restating the question before answering
-- Long preambles before getting to the point
-- Saying "I" when you can just state the fact
-- Lists when a sentence works better
-- Any language that sounds like a help desk or customer support bot`;
+AVOID:
+- Restating the question. Long preambles. Lists when a sentence works.
+- Any language that sounds like customer support.
+
+ACTION MARKERS — append at the END of response only, never mention them:
+[SAVE_MEMORY: "fact"]   [CREATE_TASK: "title"]
+[CREATE_NOTE: "title | content"]   [COMPLETE_TASK: "id or title"]
+[CREATE_GOAL: "title"]   [COMPLETE_GOAL: "title substring"]`;
 }
 
 // ── Context builder for Gemini ────────────────────────────────
 
 async function _buildContext(userMessage = '') {
   try {
-    const data = await _loadUserData();
+    const [data, goalsWithProgress] = await Promise.all([
+      _loadUserData(),
+      getGoalsWithProgress(),
+    ]);
     const {
       pending, completed, overdue, dueToday, highPri, stale,
       completedThisWeek, completedToday, allNotes, facts,
       sessions, recurringTopics, streak,
     } = data;
 
-    const recentNotes = [...allNotes]
-      .sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1)
-      .slice(0, 5);
-
-    const recentPending = [...pending]
-      .sort((a, b) => a.priority - b.priority)
-      .slice(0, 8);
-
-    const relevantMems = await _getRelevantMemories(userMessage, 6);
+    const recentNotes   = [...allNotes].sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1).slice(0, 5);
+    const recentPending = [...pending].sort((a, b) => a.priority - b.priority).slice(0, 8);
+    const relevantMems  = await _getRelevantMemories(userMessage, 6);
+    const commitments   = await _getUnresolvedCommitments(data);
 
     return {
       recentNotes, recentPending, completed, overdue, dueToday, highPri, stale,
       completedThisWeek, completedToday, allNotes, relevantMems,
       sessionSummaries: sessions, recurringTopics, streak,
-      memCount: facts.length,
+      memCount: facts.length, goals: goalsWithProgress, commitments,
     };
   } catch {
     return {
       recentNotes: [], recentPending: [], completed: [], overdue: [], dueToday: [],
       highPri: [], stale: [], completedThisWeek: [], completedToday: [], allNotes: [],
-      relevantMems: [], sessionSummaries: [], recurringTopics: [], streak: 0, memCount: 0,
+      relevantMems: [], sessionSummaries: [], recurringTopics: [], streak: 0,
+      memCount: 0, goals: [], commitments: [],
     };
   }
 }
@@ -552,7 +664,7 @@ function _buildSystemPrompt(ctx) {
   const {
     recentNotes, recentPending, completed, overdue, dueToday, stale,
     completedThisWeek, completedToday, allNotes, relevantMems,
-    sessionSummaries, recurringTopics, streak, memCount,
+    sessionSummaries, recurringTopics, streak, memCount, goals, commitments,
   } = ctx;
 
   const notesSummary = recentNotes.length
@@ -566,75 +678,59 @@ function _buildSystemPrompt(ctx) {
           ? ` · due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
           : '';
         const flag = overdue.includes(t) ? ' ⚠ OVERDUE' : dueToday.includes(t) ? ' · DUE TODAY' : '';
-        return `• [ID:${t.id}] [${p}]${flag} "${t.title}"${due} (${_taskAge(t)})`;
+        return `• [${t.id}] [${p}]${flag} "${t.title}"${due} (${_taskAge(t)})`;
       }).join('\n')
-    : 'No pending tasks.';
-
-  const overdueNote = overdue.length
-    ? `OVERDUE (${overdue.length}): ${overdue.map(t => `"${t.title}"`).join(', ')}`
-    : 'None overdue.';
-
-  const staleNote = stale.length
-    ? `STALE >7 days (${stale.length}): ${stale.slice(0, 3).map(t => `"${t.title}"`).join(', ')}`
-    : '';
-
-  const progressNote = [
-    completedToday.length ? `${completedToday.length} completed today` : '',
-    completedThisWeek.length ? `${completedThisWeek.length} this week` : '',
-    streak > 1 ? `${streak}-day streak` : '',
-  ].filter(Boolean).join(' · ') || 'No completions yet.';
-
-  const topicNote = recurringTopics.length
-    ? recurringTopics.map(t =>
-        `• "${t.topic}" (${t.count}x, last ${_relativeTime(t.lastMentioned)})`
-      ).join('\n')
-    : 'None detected.';
+    : 'None.';
 
   const memsSummary = relevantMems.length
-    ? relevantMems.map(m =>
-        `• ${m.content.slice(0, 80)} (${_relativeTime(m.timestamp || m.updatedAt)})`
-      ).join('\n')
+    ? relevantMems.map(m => `• ${m.content.slice(0, 80)} (${_relativeTime(m.timestamp || m.updatedAt)})`).join('\n')
     : 'None.';
 
   const sessionCtx = sessionSummaries.length
     ? sessionSummaries.map(s => `• ${s.content.slice(0, 150)}`).join('\n')
     : 'No previous sessions.';
 
+  const topicLines = recurringTopics.length
+    ? recurringTopics.map(t => `• "${t.topic}" — ${t.count}x, last ${_relativeTime(t.lastMentioned)}`).join('\n')
+    : 'None detected.';
+
+  const progressNote = [
+    completedToday.length   ? `${completedToday.length} today` : '',
+    completedThisWeek.length ? `${completedThisWeek.length} this week` : '',
+    streak > 1               ? `${streak}-day streak` : '',
+  ].filter(Boolean).join(' · ') || 'None yet.';
+
+  const commitLines = commitments.length
+    ? commitments.map(c => `• ${c}`).join('\n')
+    : 'None.';
+
   return `${_novaPersonaPrompt()}
 
-== USER DATA ==
+== GOALS ==
+${formatGoalsForContext(goals)}
 
-Notes (${allNotes.length} total):
-${notesSummary}
-
-Pending tasks (${recentPending.length} shown):
+== TASKS ==
+Notes (${allNotes.length}): ${notesSummary}
+Pending (${recentPending.length} shown):
 ${tasksSummary}
+Overdue: ${overdue.length} · Due today: ${dueToday.length} · Stale 7d+: ${stale.length}
+Completed: ${completed.length} total · Progress: ${progressNote}
 
-${overdueNote}
-${staleNote}
-
-Progress: ${progressNote}
-Completed total: ${completed.length} · Stored memories: ${memCount}
-
-Recurring topics in memory:
-${topicNote}
-
-Relevant memories (keyword-matched to this conversation):
+== MEMORY ==
+Recurring topics:
+${topicLines}
+Relevant memories (keyword-matched, synonym-expanded):
 ${memsSummary}
+Stored total: ${memCount}
 
+== CONTINUITY ==
 Previous sessions:
 ${sessionCtx}
-
-== ACTION MARKERS ==
-Append at the END of your response only. Never mention them to the user.
-
-[SAVE_MEMORY: "one sentence fact"]
-[CREATE_TASK: "task title"]
-[CREATE_NOTE: "title | content"]
-[COMPLETE_TASK: "task id or title substring"]`;
+Unresolved commitments:
+${commitLines}`;
 }
 
-// ── Semantic memory retrieval ─────────────────────────────────
+// ── Phase 5: Smarter Memory Retrieval ────────────────────────
 
 function _extractKeywords(text) {
   return text
@@ -645,26 +741,23 @@ function _extractKeywords(text) {
 }
 
 async function _getRelevantMemories(userMessage, limit = 6) {
-  const keywords = _extractKeywords(userMessage);
+  const baseKeywords     = _extractKeywords(userMessage);
+  const expandedKeywords = expandKeywords(baseKeywords);   // synonym expansion (Phase 5)
 
-  if (!keywords.length) {
+  if (!expandedKeywords.length) {
     console.debug('[Memory] No keywords — using recent');
     return DB.memories.getRecent(limit);
   }
 
   const all   = await DB.memories.getAll();
-  const facts = all.filter(m => m.type !== 'session_summary');
+  const facts = all.filter(m => m.type !== 'session_summary' && m.type !== 'commitment');
   if (!facts.length) return [];
 
-  const scored = facts.map(m => {
-    const hay   = (m.content + ' ' + (m.tags || []).join(' ')).toLowerCase();
-    const score = keywords.reduce((n, kw) => n + (hay.includes(kw) ? 1 : 0), 0);
-    return { memory: m, score };
-  });
-
+  const scored = facts.map(m => ({ memory: m, score: scoreMemory(m, expandedKeywords) }));
   const relevant = scored.filter(s => s.score > 0);
 
-  console.debug(`[Memory] "${userMessage.slice(0, 50)}" → keywords: [${keywords.join(', ')}]`);
+  console.debug(`[Memory] "${userMessage.slice(0, 50)}"`);
+  console.debug(`[Memory] Base: [${baseKeywords.join(', ')}] → Expanded: ${expandedKeywords.length} terms`);
   relevant.slice(0, 5).forEach(s =>
     console.debug(`  [${s.score}] ${s.memory.content.slice(0, 60)}`)
   );
@@ -683,25 +776,20 @@ async function _getRelevantMemories(userMessage, limit = 6) {
 async function _getSessionSummaries(limit = 3) {
   try {
     const all = await DB.memories.getByType('session_summary');
-    return all
-      .sort((a, b) => b.timestamp > a.timestamp ? 1 : -1)
-      .slice(0, limit);
+    return all.sort((a, b) => b.timestamp > a.timestamp ? 1 : -1).slice(0, limit);
   } catch { return []; }
 }
 
 async function _maybeGenerateSessionSummary() {
   if (_busy || _summarizing) return;
-
-  const sessionMsgs   = _messages.slice(_lastSummaryIndex);
-  const userExchanges = sessionMsgs.filter(m => m.role === 'user').length;
-  if (userExchanges < 3) return;
+  const sessionMsgs = _messages.slice(_lastSummaryIndex);
+  if (sessionMsgs.filter(m => m.role === 'user').length < 3) return;
 
   _summarizing = true;
   try {
     hasGeminiKey()
       ? await _geminiSessionSummary(sessionMsgs)
       : await _localSessionSummary(sessionMsgs);
-
     _lastSummaryIndex = _messages.length;
     try { localStorage.setItem(LS_SESSION_INDEX, String(_lastSummaryIndex)); } catch {}
   } catch (e) {
@@ -716,205 +804,171 @@ async function _geminiSessionSummary(messages) {
     .map(m => `${m.role === 'user' ? 'User' : 'NOVA'}: ${m.text.slice(0, 100)}`)
     .join('\n');
 
-  const prompt = `Summarize this conversation in 2-3 sentences. Focus on: goals, worries, commitments, and important facts. Be specific — use actual names and topics, not vague descriptions. No action markers.
-
-${transcript}`;
-
   const raw = await callGemini(
-    [{ role: 'user', text: prompt }],
-    'You are a concise summarizer. Return only the summary. No action markers. No preamble.'
+    [{ role: 'user', text: `Summarize this conversation in 2-3 sentences. Focus on goals, worries, commitments, and key facts. Be specific. No action markers.\n\n${transcript}` }],
+    'You are a concise summarizer. Return only the summary. No action markers.'
   );
-
   const summary = raw.replace(ACTION_RE, '').trim().slice(0, 500);
   if (!summary) return;
-
-  await DB.memories.create({
-    type: 'session_summary', content: summary, source: 'ai', tags: ['session'],
-  });
+  await DB.memories.create({ type: 'session_summary', content: summary, source: 'ai', tags: ['session'] });
   console.log('[Session] Saved:', summary.slice(0, 80));
 }
 
 async function _localSessionSummary(messages) {
   const userMsgs = messages.filter(m => m.role === 'user').map(m => m.text);
   if (!userMsgs.length) return;
-  const topics  = userMsgs.slice(0, 4).map(t => `"${t.slice(0, 60)}"`).join(', ');
   await DB.memories.create({
     type: 'session_summary',
-    content: `Session: User discussed ${topics}.`,
+    content: `Session: User discussed ${userMsgs.slice(0, 4).map(t => `"${t.slice(0, 60)}"`).join(', ')}.`,
     source: 'local', tags: ['session'],
   });
 }
 
+// ── Shared data loader ────────────────────────────────────────
+
+async function _loadUserData() {
+  const [allTasks, allNotes, allMems] = await Promise.all([
+    DB.tasks.getAll(),
+    DB.notes.getAll(),
+    DB.memories.getAll(),
+  ]);
+
+  const now        = new Date();
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const weekAgo    = new Date(now - 7 * 86400000);
+
+  const pending            = allTasks.filter(t => t.status === 'pending');
+  const completed          = allTasks.filter(t => t.status === 'completed');
+  const overdue            = pending.filter(t => t.dueDate && new Date(t.dueDate) < todayStart);
+  const dueToday           = pending.filter(t => {
+    if (!t.dueDate) return false;
+    const d = new Date(t.dueDate); d.setHours(0, 0, 0, 0);
+    return d.getTime() === todayStart.getTime();
+  });
+  const highPri            = pending.filter(t => t.priority === 1 && !overdue.includes(t));
+  const stale              = pending.filter(t => new Date(t.createdAt) < weekAgo && !overdue.includes(t));
+  const completedThisWeek  = completed.filter(t => t.completedAt && new Date(t.completedAt) > weekAgo);
+  const completedToday     = completed.filter(t => t.completedAt && new Date(t.completedAt) >= todayStart);
+
+  const facts    = allMems.filter(m => m.type !== 'session_summary' && m.type !== 'commitment');
+  const sessions = await _getSessionSummaries(3);
+  const recurringTopics = _detectRecurringTopics(facts);
+  const streak          = _computeStreak(completed);
+
+  return {
+    pending, completed, overdue, dueToday, highPri, stale,
+    completedThisWeek, completedToday, allNotes, facts, sessions,
+    recurringTopics, streak, now,
+  };
+}
+
 // ── Offline Intelligence Layer ────────────────────────────────
-// Full analysis without Gemini. Dispatches by intent.
 
 async function _offlineResponse(text) {
   const q    = text.toLowerCase().trim();
   const data = await _loadUserData();
+  const goals = await getGoalsWithProgress();
 
-  // Priority / focus
-  if (/\b(focus|priority|priorities|what.*work|start|tackle|important|urgent|first)\b/.test(q)) {
-    return _offlinePriority(data);
-  }
-  // Progress / how am I doing
-  if (/\b(progress|how.*doing|productive|accomplish|complet|done|finish|streak)\b/.test(q)) {
+  // Intent routing
+  if (/\b(focus|priority|priorities|what.*work|start|tackle|important|urgent|first)\b/.test(q))
+    return _offlinePriority(data, goals);
+
+  if (/\b(progress|how.*doing|productive|accomplish|complet|done|finish|streak)\b/.test(q))
     return _offlineProgress(data);
-  }
-  // Overview / summary
-  if (/\b(summary|overview|status|caught up|brief|update|everything)\b/.test(q)) {
-    return _offlineSummary(data);
-  }
-  // Recommendation
-  if (/\b(recommend|suggest|advice|what should|next step|plan)\b/.test(q)) {
-    return _offlineRecommendation(data, q);
-  }
-  // Memory / what I've been thinking
-  if (/\b(memor|remember|know about|thinking about|mention|discuss|topic|pattern)\b/.test(q)) {
-    return _offlineMemories(data, q);
-  }
-  // Tasks
-  if (/\b(task|todo|pending|overdue|due|list)\b/.test(q)) {
-    return _offlineTasks(data, q);
-  }
-  // Notes
-  if (/\b(note|wrote|saved|document|notes)\b/.test(q)) {
-    return _offlineNotes(data);
-  }
-  // Help
-  if (/\b(help|what can|commands|capabilities)\b/.test(q)) {
-    return _offlineHelp();
-  }
-  // Quick note/task creation
-  const noteMatch = q.match(/^(?:remember|save|note this)[:\-—]?\s+(.+)/i);
-  if (noteMatch) return _createNote(noteMatch[1].trim());
-  const taskMatch = q.match(/^(?:todo|add task|create task|remind me to)[:\-—]?\s+(.+)/i);
-  if (taskMatch) return _createTask(taskMatch[1].trim());
 
-  // Fallback — still be useful
-  return _offlineGeneral(data, text);
+  if (/\b(summary|overview|status|caught up|brief|update|everything)\b/.test(q))
+    return _offlineSummary(data, goals);
+
+  if (/\b(recommend|suggest|advice|what should|next step|plan)\b/.test(q))
+    return _offlineRecommendation(data, goals);
+
+  if (/\b(goal|goals|objective|target|aim)\b/.test(q))
+    return _offlineGoals(data, goals);
+
+  if (/\b(memor|remember|know about|thinking about|mention|discuss|topic|pattern)\b/.test(q))
+    return _offlineMemories(data);
+
+  if (/\b(task|todo|pending|overdue|due|list)\b/.test(q))
+    return _offlineTasks(data);
+
+  if (/\b(note|wrote|saved|document|notes)\b/.test(q))
+    return _offlineNotes(data);
+
+  if (/\b(commitment|promise|said.*would|said.*finish)\b/.test(q))
+    return _offlineCommitments(data);
+
+  if (/\b(help|what can|commands|capabilities)\b/.test(q))
+    return _offlineHelp();
+
+  return _offlineGeneral(data, goals);
 }
 
-function _offlinePriority(data) {
-  const { pending, overdue, dueToday, highPri, stale, recurringTopics } = data;
-
-  if (!pending.length) return "No open tasks right now.";
-
+function _offlinePriority(data, goals) {
+  const { pending, overdue, dueToday, highPri, stale } = data;
+  if (!pending.length) return 'No open tasks.';
   const lines = [];
 
   if (overdue.length) {
-    lines.push(`${overdue.length} overdue — deal with ${overdue.length === 1 ? 'it' : 'these'} first:`);
-    overdue.slice(0, 3).forEach(t =>
-      lines.push(`  • "${t.title}" (${_taskAge(t)})`)
-    );
+    lines.push(`${overdue.length} overdue:`);
+    overdue.slice(0, 3).forEach(t => lines.push(`  • "${t.title}" — ${_taskAge(t)}`));
   }
+  if (dueToday.length) lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
 
-  if (dueToday.length) {
-    lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
-  }
-
-  const top = overdue[0] || dueToday[0] || highPri[0] ||
-    [...pending].sort((a, b) => a.priority - b.priority)[0];
-
+  const top = overdue[0] || dueToday[0] || highPri[0]
+    || [...pending].sort((a, b) => a.priority - b.priority)[0];
   if (top && !overdue.length && !dueToday.length) {
     const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
-    lines.push(`Top priority: "${top.title}"${age > 2 ? ` — ${age} days old` : ''}.`);
+    lines.push(`Start with: "${top.title}"${age > 2 ? ` — ${age} days old` : ''}.`);
   }
 
-  if (stale.length) {
-    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been open over a week — worth reviewing.`);
-  }
+  const relGoal = goals.find(g => (g.linkedTaskIds || []).includes(top?.id));
+  if (relGoal) lines.push(`Contributes to goal: "${relGoal.title}" (${relGoal.progress}%).`);
 
-  if (recurringTopics.length && !overdue.length) {
-    lines.push(`\nYou keep coming back to "${recurringTopics[0].topic}" — make sure it's represented in your tasks.`);
-  }
-
+  if (stale.length) lines.push(`\n${stale.length} task${stale.length !== 1 ? 's' : ''} open 7+ days — review or close them.`);
   return lines.join('\n');
 }
 
 function _offlineProgress(data) {
   const { completed, completedToday, completedThisWeek, pending, overdue, streak } = data;
-
   const lines = [];
-
-  if (completedToday.length) {
-    lines.push(`${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} done today.`);
-  }
-  if (completedThisWeek.length) {
-    lines.push(`${completedThisWeek.length} completed this week out of ${pending.length + completedThisWeek.length} total.`);
-  }
-  if (streak > 1) {
-    lines.push(`${streak}-day completion streak.`);
-  }
-  if (!completedToday.length && !completedThisWeek.length) {
-    lines.push("Nothing completed yet this week.");
-  }
-
-  if (overdue.length) {
-    lines.push(`\n${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''} — that's the gap worth closing.`);
-  }
-
-  lines.push(`\n${completed.length} total tasks completed across all time.`);
-
+  if (completedToday.length)   lines.push(`${completedToday.length} done today.`);
+  if (completedThisWeek.length) lines.push(`${completedThisWeek.length} this week out of ${pending.length + completedThisWeek.length} total.`);
+  if (streak > 1)               lines.push(`${streak}-day completion streak.`);
+  if (!completedToday.length && !completedThisWeek.length) lines.push('Nothing completed yet this week.');
+  if (overdue.length) lines.push(`\n${overdue.length} overdue — that's the gap.`);
+  lines.push(`\n${completed.length} tasks completed all time.`);
   return lines.join('\n');
 }
 
-function _offlineSummary(data) {
-  const { pending, completed, overdue, dueToday, allNotes, facts, sessions,
-          recurringTopics, streak, completedThisWeek } = data;
-
+function _offlineSummary(data, goals) {
+  const { pending, completed, overdue, dueToday, allNotes, facts,
+          sessions, recurringTopics, streak, completedThisWeek } = data;
   const lines = [];
 
-  // Tasks
-  if (pending.length) {
-    lines.push(`${pending.length} open task${pending.length !== 1 ? 's' : ''}${overdue.length ? `, ${overdue.length} overdue` : ''}${dueToday.length ? `, ${dueToday.length} due today` : ''}.`);
-  } else {
-    lines.push('No open tasks.');
-  }
-
-  // Notes
-  if (allNotes.length) lines.push(`${allNotes.length} note${allNotes.length !== 1 ? 's' : ''} saved.`);
-
-  // Memory
-  if (facts.length) lines.push(`${facts.length} memor${facts.length !== 1 ? 'ies' : 'y'} stored.`);
-
-  // Progress
+  lines.push(`${pending.length} open task${pending.length !== 1 ? 's' : ''}${overdue.length ? `, ${overdue.length} overdue` : ''}${dueToday.length ? `, ${dueToday.length} due today` : ''}.`);
+  if (allNotes.length) lines.push(`${allNotes.length} notes · ${facts.length} memories.`);
   if (completedThisWeek.length || streak > 1) {
     const parts = [];
-    if (completedThisWeek.length) parts.push(`${completedThisWeek.length} completed this week`);
+    if (completedThisWeek.length) parts.push(`${completedThisWeek.length} done this week`);
     if (streak > 1) parts.push(`${streak}-day streak`);
     lines.push(parts.join(', ') + '.');
   }
-
-  // Recurring topic
-  if (recurringTopics.length) {
-    lines.push(`\nYou've mentioned "${recurringTopics[0].topic}" ${recurringTopics[0].count} times recently.`);
-  }
-
-  // Last session
-  if (sessions.length) {
-    lines.push(`\nLast session: ${sessions[0].content.slice(0, 100)}${sessions[0].content.length > 100 ? '…' : ''}`);
-  }
-
+  if (goals.length) lines.push(`\nGoals: ${formatGoalsBrief(goals)}.`);
+  if (recurringTopics.length) lines.push(`\n"${recurringTopics[0].topic}" keeps coming up (${recurringTopics[0].count}x).`);
+  if (sessions.length) lines.push(`\nLast session: ${sessions[0].content.slice(0, 100)}…`);
   return lines.join('\n');
 }
 
-function _offlineRecommendation(data, query) {
-  const { pending, overdue, dueToday, highPri, stale, recurringTopics, completedThisWeek } = data;
-
-  if (!pending.length) {
-    return "No open tasks. Add something to work toward — task: [description].";
-  }
-
+function _offlineRecommendation(data, goals) {
+  const { pending, overdue, dueToday, highPri, stale, recurringTopics } = data;
+  if (!pending.length) return 'No open tasks. Add something with: task: [description]';
   const lines = [];
 
   if (overdue.length) {
-    lines.push(`Clear the overdue queue first — "${overdue[0].title}" has been waiting the longest.`);
-    if (overdue.length > 1) {
-      lines.push(`Then: ${overdue.slice(1, 3).map(t => `"${t.title}"`).join(', ')}.`);
-    }
+    lines.push(`Clear overdue first: "${overdue[0].title}" has been waiting longest.`);
+    if (overdue.length > 1) lines.push(`Then: ${overdue.slice(1, 3).map(t => `"${t.title}"`).join(', ')}.`);
     return lines.join('\n');
   }
-
   if (dueToday.length) {
     lines.push(`Today's focus: "${dueToday[0].title}".`);
     if (dueToday.length > 1) lines.push(`Also due: ${dueToday.slice(1).map(t => `"${t.title}"`).join(', ')}.`);
@@ -924,147 +978,177 @@ function _offlineRecommendation(data, query) {
   const top = highPri[0] || [...pending].sort((a, b) => a.priority - b.priority)[0];
   if (top) {
     const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
-    lines.push(`Focus on: "${top.title}"${age > 3 ? ` — it's been open ${age} days` : ''}.`);
+    lines.push(`Focus on: "${top.title}"${age > 3 ? ` — ${age} days open` : ''}.`);
+    const relGoal = goals.find(g => (g.linkedTaskIds || []).includes(top.id));
+    if (relGoal) lines.push(`This advances your "${relGoal.title}" goal (${relGoal.progress}%).`);
   }
 
-  if (stale.length) {
-    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been untouched for 7+ days. Worth closing or deleting.`);
-  }
-
-  if (recurringTopics.length) {
-    lines.push(`\n"${recurringTopics[0].topic}" keeps coming up in your notes — make sure it's accounted for.`);
-  }
-
+  if (stale.length) lines.push(`\n${stale.length} old task${stale.length !== 1 ? 's' : ''} worth reviewing or deleting.`);
+  if (recurringTopics.length) lines.push(`\n"${recurringTopics[0].topic}" keeps coming up — make sure it's in your task list.`);
   return lines.join('\n');
 }
 
-async function _offlineMemories(data, query) {
-  const { facts, sessions, recurringTopics } = data;
-
-  if (!facts.length && !sessions.length) {
-    return "Nothing stored in memory yet. Start talking — I'll pick up what matters.";
+function _offlineGoals(data, goals) {
+  if (!goals.length) {
+    return 'No active goals. Create one with: goal: [title]\nor say "I\'m working toward [goal]".';
   }
+  const lines = [`${goals.length} active goal${goals.length !== 1 ? 's' : ''}:`, ''];
+  goals.forEach(g => {
+    const due   = g.targetDate
+      ? ` · target ${new Date(g.targetDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+      : '';
+    const prog  = g.linkedCount
+      ? ` — ${g.progress}% (${g.completedCount}/${g.linkedCount} tasks)`
+      : ' — no linked tasks yet';
+    lines.push(`• "${g.title}"${prog}${due}`);
+  });
+  return lines.join('\n');
+}
 
+function _offlineMemories(data) {
+  const { facts, sessions, recurringTopics } = data;
+  if (!facts.length && !sessions.length) return "Nothing in memory yet. Start talking — I'll capture what matters.";
   const lines = [];
-
   if (recurringTopics.length) {
-    lines.push(`Recurring topics across your memories:`);
+    lines.push('Recurring topics:');
     recurringTopics.forEach(t =>
       lines.push(`  • "${t.topic}" — ${t.count}x, last ${_relativeTime(t.lastMentioned)}`)
     );
-    lines.push('');
   }
-
   if (facts.length) {
     const recent = [...facts].sort((a, b) => b.timestamp > a.timestamp ? 1 : -1).slice(0, 4);
-    lines.push(`Recent facts (${facts.length} total):`);
-    recent.forEach(m =>
-      lines.push(`  • ${m.content.slice(0, 80)} — ${_relativeTime(m.timestamp)}`)
-    );
+    lines.push(`\nRecent facts (${facts.length} total):`);
+    recent.forEach(m => lines.push(`  • ${m.content.slice(0, 80)} — ${_relativeTime(m.timestamp)}`));
   }
-
-  if (sessions.length) {
-    lines.push(`\nLast session: ${sessions[0].content.slice(0, 120)}`);
-  }
-
+  if (sessions.length) lines.push(`\nLast session: ${sessions[0].content.slice(0, 120)}`);
   return lines.join('\n');
 }
 
-async function _offlineTasks(data, query) {
+function _offlineTasks(data) {
   const { pending, overdue, dueToday, highPri, stale, completed } = data;
-
-  if (!pending.length) return "No pending tasks. Use task: [text] to add one.";
-
+  if (!pending.length) return 'No pending tasks. Use task: [text] to add one.';
   const lines = [];
-
   if (overdue.length) {
     lines.push(`Overdue (${overdue.length}):`);
     overdue.forEach(t => lines.push(`  • "${t.title}" — ${_taskAge(t)}`));
-    lines.push('');
   }
-  if (dueToday.length) {
-    lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
-  }
-  if (highPri.length) {
-    lines.push(`High priority: ${highPri.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
-  }
-  if (stale.length) {
-    lines.push(`\nStale (7+ days open): ${stale.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
-  }
-
-  lines.push(`\n${pending.length} open, ${completed.length} completed total.`);
+  if (dueToday.length) lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
+  if (highPri.length)  lines.push(`High priority: ${highPri.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
+  if (stale.length)    lines.push(`\nOpen 7+ days: ${stale.slice(0, 3).map(t => `"${t.title}"`).join(', ')}.`);
+  lines.push(`\n${pending.length} open · ${completed.length} completed.`);
   return lines.join('\n');
 }
 
-async function _offlineNotes(data) {
+function _offlineNotes(data) {
   const { allNotes } = data;
-
-  if (!allNotes.length) return 'No notes saved yet. Use note: [text] to create one.';
-
+  if (!allNotes.length) return 'No notes yet. Use note: [text] to create one.';
   const pinned = allNotes.filter(n => n.pinned);
-  const recent = [...allNotes]
-    .sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1)
-    .slice(0, 5);
-
-  const lines = [`${allNotes.length} note${allNotes.length !== 1 ? 's' : ''} saved.`];
+  const recent = [...allNotes].sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1).slice(0, 5);
+  const lines  = [`${allNotes.length} note${allNotes.length !== 1 ? 's' : ''}.`];
   if (pinned.length) lines.push(`Pinned: ${pinned.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
   lines.push(`Recent: ${recent.map(n => `"${n.title || 'Untitled'}"`).join(', ')}.`);
+  return lines.join('\n');
+}
 
+async function _offlineCommitments(data) {
+  const unresolved = await _getUnresolvedCommitments(data);
+  if (!unresolved.length) return 'No unresolved commitments on record.';
+  const lines = [`${unresolved.length} unresolved commitment${unresolved.length !== 1 ? 's' : ''}:`];
+  unresolved.forEach(c => lines.push(`  • ${c}`));
   return lines.join('\n');
 }
 
 function _offlineHelp() {
   return [
-    'Without a Gemini key, I can still analyze your data directly.',
+    'Without a Gemini key, I can still analyze your data.',
     '',
-    'Ask me:',
-    '• **"What should I focus on?"** — priority analysis',
-    '• **"How\'s my progress?"** — completion + streak',
-    '• **"Give me a summary"** — full system overview',
-    '• **"What have I been thinking about?"** — memory patterns',
-    '• **"Recommend something"** — data-driven suggestion',
+    '**What to ask:**',
+    '• "What should I focus on?" — priority analysis',
+    '• "How\'s my progress?" — completion + streak',
+    '• "Give me a summary" — full overview',
+    '• "What are my goals?" — goal progress',
+    '• "What have I been thinking about?" — memory patterns',
+    '• "Any commitments I haven\'t kept?" — commitment tracking',
     '',
-    'Shortcuts: **note: [text]** · **task: [text]** · **clear**',
+    '**Quick actions:**',
+    '• **goal: [title]** — create a goal',
+    '• **task: [text]** — create a task (due dates understood)',
+    '• **note: [text]** — save a note',
+    '',
+    'Natural language also works:',
+    '• "Remind me to call mom tomorrow"',
+    '• "Remember that my exam is Friday"',
+    '• "I\'m working toward launching NOVA"',
     '',
     'Add a Gemini key in Settings for full conversational AI.',
   ].join('\n');
 }
 
-function _offlineGeneral(data, text) {
-  const { pending, overdue, facts, recurringTopics } = data;
+function _offlineGeneral(data, goals) {
+  const { pending, overdue, recurringTopics } = data;
   const lines = [];
-
-  // Still try to be useful
   if (overdue.length) {
-    lines.push(`You have ${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''} — "${overdue[0].title}" is the oldest.`);
+    lines.push(`${overdue.length} overdue task${overdue.length !== 1 ? 's' : ''}: "${overdue[0].title}" is the oldest.`);
   } else if (pending.length) {
     const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
-    lines.push(`${pending.length} open tasks. Top priority: "${top.title}".`);
+    lines.push(`${pending.length} open tasks. Top: "${top.title}".`);
   }
-
-  if (recurringTopics.length) {
-    lines.push(`You've mentioned "${recurringTopics[0].topic}" ${recurringTopics[0].count} times.`);
-  }
-
-  lines.push('\nAdd a Gemini key in Settings for full AI responses. Or ask about tasks, priorities, or memories — I can analyze those directly.');
-
+  if (goals.length) lines.push(formatGoalsBrief(goals));
+  if (recurringTopics.length) lines.push(`"${recurringTopics[0].topic}" comes up often.`);
+  lines.push('\nAsk about tasks, goals, memories, progress, or priorities. Or add a Gemini key for full AI.');
   return lines.join('\n');
+}
+
+// ── Phase 2: Dynamic idle suggestions ─────────────────────────
+
+async function _getIdleSuggestions() {
+  try {
+    const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
+    const { overdue, pending, recurringTopics, sessions } = data;
+    const suggestions = [];
+
+    if (overdue.length)
+      suggestions.push(`Work on "${overdue[0].title}"?`);
+    else if (pending.length) {
+      const top = [...pending].sort((a, b) => a.priority - b.priority)[0];
+      suggestions.push(`Continue "${top.title}"?`);
+    }
+
+    if (recurringTopics.length)
+      suggestions.push(`Update on "${recurringTopics[0].topic}"?`);
+
+    if (goals.length) {
+      const incomplete = goals.filter(g => g.progress < 100);
+      if (incomplete.length)
+        suggestions.push(`Check on "${incomplete[0].title}"?`);
+    }
+
+    if (sessions.length)
+      suggestions.push('Pick up where we left off?');
+
+    const fallbacks = ['What should I focus on?', "How's my progress?", 'Plan my day', 'Any commitments I missed?'];
+    while (suggestions.length < 4) {
+      const f = fallbacks.shift();
+      if (f && !suggestions.includes(f)) suggestions.push(f);
+    }
+    return suggestions.slice(0, 4);
+  } catch {
+    return ["What should I focus on?", "How's my progress?", 'Plan my day', 'What are my goals?'];
+  }
 }
 
 // ── Action marker parser ──────────────────────────────────────
 
-const ACTION_RE = /\[(SAVE_MEMORY|CREATE_TASK|CREATE_NOTE|COMPLETE_TASK):\s*"([^"]+)"\]/g;
+const ACTION_RE = /\[(SAVE_MEMORY|CREATE_TASK|CREATE_NOTE|COMPLETE_TASK|CREATE_GOAL|COMPLETE_GOAL):\s*"([^"]+)"\]/g;
 
 async function _parseActions(rawText) {
   const actions = [];
   let clean = rawText;
-
   for (const match of rawText.matchAll(ACTION_RE)) {
     actions.push({ type: match[1], value: match[2] });
     clean = clean.replace(match[0], '');
   }
   clean = clean.replace(/\n{3,}/g, '\n\n').trim();
-
   for (const action of actions) {
     try { await _executeAction(action.type, action.value); }
     catch (e) { console.warn('[Action]', action.type, e); }
@@ -1078,20 +1162,22 @@ async function _executeAction(type, value) {
       const id = await DB.memories.create({ type: 'ai_fact', content: value, source: 'ai', tags: [] });
       Bus.emit(EVENTS.MEMORY_CREATED, { id, content: value });
       await logEvent(EVENT_TYPES.MEMORY_CREATED, `Memory: ${value.slice(0, 60)}`);
-      showToast('◈ Memory saved', 'success', 2200);
+      showToast('◈ Remembered', 'success', 2200);
       break;
     }
     case 'CREATE_TASK': {
-      const id = await DB.tasks.create({ title: value.slice(0, 80) });
-      Bus.emit(EVENTS.TASK_CREATED, { id, title: value });
-      await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${value.slice(0, 60)}`);
-      showToast(`◉ Task: "${value.slice(0, 40)}"`, 'success', 2500);
+      const { clean, date, phrase } = parseDueDate(value);
+      const title  = (clean || value).trim().slice(0, 80);
+      const taskId = await DB.tasks.create({ title, dueDate: date });
+      Bus.emit(EVENTS.TASK_CREATED, { id: taskId, title });
+      await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${title}`);
+      showToast(`◉ Task: "${title.slice(0, 40)}"${phrase ? ` · ${phrase}` : ''}`, 'success', 2500);
       break;
     }
     case 'CREATE_NOTE': {
       const [title, ...rest] = value.split('|');
-      const content = rest.join('|').trim();
-      const id = await DB.notes.create({ title: title.trim().slice(0, 60), content: content || title.trim() });
+      const content = rest.join('|').trim() || title.trim();
+      const id = await DB.notes.create({ title: title.trim().slice(0, 60), content });
       Bus.emit(EVENTS.NOTE_CREATED, { id, title: title.trim() });
       await logEvent(EVENT_TYPES.NOTE_CREATED, `Note: ${title.trim().slice(0, 60)}`);
       showToast(`◇ Note: "${title.trim().slice(0, 35)}"`, 'success', 2500);
@@ -1099,14 +1185,26 @@ async function _executeAction(type, value) {
     }
     case 'COMPLETE_TASK': {
       const all    = await DB.tasks.getAll();
-      const target = all.find(t =>
-        t.id === value || t.title.toLowerCase().includes(value.toLowerCase())
-      );
+      const target = all.find(t => t.id === value || t.title.toLowerCase().includes(value.toLowerCase()));
       if (target && target.status !== 'completed') {
         await DB.tasks.update(target.id, { status: 'completed', completedAt: new Date().toISOString() });
         Bus.emit(EVENTS.TASK_COMPLETED, { id: target.id, title: target.title });
         await logEvent(EVENT_TYPES.TASK_COMPLETED, `Done: ${target.title}`);
         showToast(`✓ "${target.title.slice(0, 40)}"`, 'success', 2500);
+      }
+      break;
+    }
+    case 'CREATE_GOAL': {
+      const { clean, date } = parseDueDate(value);
+      await createGoal(clean || value, '', date);
+      break;
+    }
+    case 'COMPLETE_GOAL': {
+      const allGoals = await DB.goals.getActive();
+      const g = allGoals.find(g => g.title.toLowerCase().includes(value.toLowerCase()));
+      if (g) {
+        await DB.goals.update(g.id, { status: 'completed' });
+        showToast(`◎ Goal achieved: "${g.title}"`, 'success', 3000);
       }
       break;
     }
@@ -1126,15 +1224,90 @@ async function _createNote(content) {
   } catch { return "Couldn't save that note."; }
 }
 
-async function _createTask(content) {
+async function _createTaskWithDate(title, date, phrase) {
   try {
-    const title = content.slice(0, 80);
-    const id    = await DB.tasks.create({ title });
+    const id = await DB.tasks.create({ title: title.slice(0, 80), dueDate: date });
     Bus.emit(EVENTS.TASK_CREATED, { id, title });
     await logEvent(EVENT_TYPES.TASK_CREATED, `Task: ${title}`);
-    showToast('◉ Added', 'success', 2000);
-    return `Added: "${title}${content.length > 80 ? '…' : ''}".`;
+    showToast(`◉ Task: "${title.slice(0, 40)}"${phrase ? ` · ${phrase}` : ''}`, 'success', 2500);
+    const relGoal = await findRelatedGoal(title);
+    let goalNote  = '';
+    if (relGoal) { await linkTaskToGoal(relGoal.id, id); goalNote = ` Linked to "${relGoal.title}".`; }
+    return `Added: "${title}"${phrase ? `. Due: ${phrase}.` : '.'}${goalNote}`;
   } catch { return "Couldn't add that task."; }
+}
+
+// ── Utility functions ─────────────────────────────────────────
+
+function _timeContext() {
+  const h = new Date().getHours();
+  if (h < 6)  return 'late night';
+  if (h < 12) return 'morning';
+  if (h < 14) return 'midday';
+  if (h < 18) return 'afternoon';
+  if (h < 22) return 'evening';
+  return 'late night';
+}
+
+function _relativeTime(isoStr) {
+  if (!isoStr) return 'recently';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const days = Math.floor(diff / 86400000);
+  if (diff < 3600000) return 'earlier today';
+  if (days === 0)     return 'earlier today';
+  if (days === 1)     return 'yesterday';
+  if (days < 7)       return `${days} days ago`;
+  if (days < 14)      return 'last week';
+  if (days < 30)      return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
+function _taskAge(task) {
+  const days = Math.floor((Date.now() - new Date(task.createdAt).getTime()) / 86400000);
+  if (days === 0) return 'added today';
+  if (days === 1) return '1 day old';
+  return `${days} days old`;
+}
+
+function _detectRecurringTopics(memories, minCount = 2) {
+  const freq = {}, lastTs = {};
+  const skip = new Set([
+    'the','and','for','that','this','with','have','from','about','been',
+    'they','will','your','what','when','user','nova','just','also','more',
+    'some','into','than','then','were','said','like','even','well','back',
+    'would','could','should','task','note','memory','mentioned','session',
+  ]);
+  for (const m of memories) {
+    if (m.type === 'session_summary') continue;
+    const words = m.content.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+      .filter(w => w.length > 3 && !skip.has(w));
+    for (const w of new Set(words)) {
+      freq[w] = (freq[w] || 0) + 1;
+      if (!lastTs[w] || m.timestamp > lastTs[w]) lastTs[w] = m.timestamp;
+    }
+  }
+  return Object.entries(freq)
+    .filter(([, c]) => c >= minCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([topic, count]) => ({ topic, count, lastMentioned: lastTs[topic] }));
+}
+
+function _computeStreak(completedTasks) {
+  const dates = [...new Set(
+    completedTasks.filter(t => t.completedAt).map(t => new Date(t.completedAt).toDateString()),
+  )].sort((a, b) => new Date(a) - new Date(b));
+  if (!dates.length) return 0;
+  const today     = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+  const last      = dates[dates.length - 1];
+  if (last !== today && last !== yesterday) return 0;
+  let streak = 1;
+  for (let i = dates.length - 2; i >= 0; i--) {
+    if ((new Date(dates[i + 1]) - new Date(dates[i])) / 86400000 === 1) streak++;
+    else break;
+  }
+  return streak;
 }
 
 // ── Panel renderer ────────────────────────────────────────────
@@ -1144,32 +1317,50 @@ export function renderConversationPanel() {
   if (!content) return;
 
   if (!_messages.length) {
+    // Async idle suggestions — render placeholder first, then update
+    const placeholderId = 'conv-suggestions-' + Date.now();
     content.innerHTML = `
       <div class="conv-empty">
         <div class="conv-empty-icon">◎</div>
-        <p class="conv-empty-title">Ask me anything</p>
+        <p class="conv-empty-title">NOVA</p>
         <p class="conv-empty-desc">${hasGeminiKey()
-          ? 'Gemini connected. Talk naturally.'
-          : 'No Gemini key — but I can still analyze your tasks, memories, and priorities.'
+          ? 'AI connected. Talk naturally.'
+          : 'Analyzing your data. Ask about tasks, goals, or priorities.'
         }</p>
-        <div class="conv-suggestions">
+        <div class="conv-suggestions" id="${placeholderId}">
           <button class="conv-suggest" data-q="What should I focus on?">Focus</button>
           <button class="conv-suggest" data-q="How's my progress?">Progress</button>
           <button class="conv-suggest" data-q="Give me a summary">Summary</button>
-          <button class="conv-suggest" data-q="What have I been thinking about?">Patterns</button>
+          <button class="conv-suggest" data-q="What are my goals?">Goals</button>
         </div>
       </div>`;
-    content.querySelectorAll('.conv-suggest').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const input = document.getElementById('nova-input');
-        if (input) { input.value = btn.dataset.q; input.focus(); }
-      });
-    });
+
+    // Wire placeholder buttons
+    _wireSuggestionButtons(content);
+
+    // Replace with personalized suggestions async
+    _getIdleSuggestions().then(suggestions => {
+      const container = document.getElementById(placeholderId);
+      if (!container) return;
+      container.innerHTML = suggestions
+        .map(s => `<button class="conv-suggest" data-q="${s.replace(/"/g, '&quot;')}">${s}</button>`)
+        .join('');
+      _wireSuggestionButtons(content);
+    }).catch(() => {});
     return;
   }
 
   content.innerHTML = `<div class="conv-list">${_messages.map(_renderMessage).join('')}</div>`;
   requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
+}
+
+function _wireSuggestionButtons(content) {
+  content.querySelectorAll('.conv-suggest').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('nova-input');
+      if (input) { input.value = btn.dataset.q; input.focus(); }
+    });
+  });
 }
 
 function _renderMessage(msg) {
@@ -1204,9 +1395,7 @@ function _saveHistory() {
 }
 
 function _renderIfOpen() {
-  if (State.get('activeView') === 'chat' && State.get('panelOpen')) {
-    renderConversationPanel();
-  }
+  if (State.get('activeView') === 'chat' && State.get('panelOpen')) renderConversationPanel();
 }
 
 function _delay(ms) { return new Promise(r => setTimeout(r, ms)); }

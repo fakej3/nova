@@ -15,7 +15,18 @@ const ENDPOINT =
 
 const LS_KEY = 'nova_gemini_key';
 
-let _key = '';
+let _key        = '';
+let _callCount  = 0;
+let _lastSource = null;
+let _lastCallAt = null;
+
+export function getGeminiStats() {
+  return { callCount: _callCount, lastSource: _lastSource, lastCallAt: _lastCallAt };
+}
+
+export function resetGeminiStats() {
+  _callCount = 0; _lastSource = null; _lastCallAt = null;
+}
 
 // ── Key management ────────────────────────────────────────────
 
@@ -43,9 +54,15 @@ export function hasGeminiKey() {
  * @param {string} systemPrompt  — NOVA persona + live context
  * @returns {Promise<string>}    — raw model text (may contain action markers)
  */
-export async function callGemini(history, systemPrompt) {
+export async function callGemini(history, systemPrompt, source = 'chat') {
   const key = getGeminiKey();
   if (!key) throw new Error('NO_KEY');
+
+  _callCount++;
+  _lastSource = source;
+  _lastCallAt = new Date().toISOString();
+  console.log(`[Gemini] call #${_callCount} — source: "${source}"`);
+
 
   // Convert to Gemini format. Gemini requires alternating user/model turns,
   // ending on a user turn. Filter consecutive same-role messages by keeping last.

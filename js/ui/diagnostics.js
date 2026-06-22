@@ -8,6 +8,7 @@ import { DB }             from '../core/db.js';
 import { buildContext }   from '../services/context.js';
 import { search }         from '../services/search.js';
 import { escHtml }        from '../core/utils.js';
+import { getGeminiStats, hasGeminiKey } from '../services/gemini.js';
 
 // ── Public API ────────────────────────────────────────────────
 
@@ -18,19 +19,28 @@ export async function renderDiagnosticsPanel() {
   container.innerHTML = _htmlLoading();
 
   try {
-    const [notesCount, tasksCount, eventsCount, memoriesCount, ctx] = await Promise.all([
+    const [notesCount, tasksCount, eventsCount, memoriesCount, goalsCount, allMems, ctx] = await Promise.all([
       DB.notes.count(),
       DB.tasks.count(),
       DB.events.count(),
       DB.memories.count(),
+      DB.goals.count(),
+      DB.memories.getAll(),
       buildContext(),
     ]);
 
+    const sessionSummaryCount = allMems.filter(m => m.type === 'session_summary').length;
+    const geminiStats = getGeminiStats();
+
     container.innerHTML = _htmlPanel({
-      notesCount:    notesCount    ?? 0,
-      tasksCount:    tasksCount    ?? 0,
-      eventsCount:   eventsCount   ?? 0,
-      memoriesCount: memoriesCount ?? 0,
+      notesCount:          notesCount    ?? 0,
+      tasksCount:          tasksCount    ?? 0,
+      eventsCount:         eventsCount   ?? 0,
+      memoriesCount:       memoriesCount ?? 0,
+      goalsCount:          goalsCount    ?? 0,
+      sessionSummaryCount,
+      geminiStats,
+      geminiConnected:     hasGeminiKey(),
       ctx,
     });
 
@@ -80,14 +90,36 @@ function _htmlLoading() {
   return '<div class="diag-loading">Loading diagnostics…</div>';
 }
 
-function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, ctx }) {
+function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, goalsCount, sessionSummaryCount, geminiStats, geminiConnected, ctx }) {
+  const { callCount, lastSource, lastCallAt } = geminiStats;
+  const lastCallStr = lastCallAt
+    ? new Date(lastCallAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : 'none';
+
   return `
     <div class="diag-counts">
       ${_countCell('Notes',    notesCount,    '◈')}
       ${_countCell('Tasks',    tasksCount,    '◎')}
       ${_countCell('Events',   eventsCount,   '◉')}
       ${_countCell('Memories', memoriesCount, '◆')}
+      ${_countCell('Goals',    goalsCount,    '◎')}
+      ${_countCell('Sessions', sessionSummaryCount, '⬡')}
     </div>
+
+    <details class="diag-panel" open>
+      <summary class="diag-summary">Gemini API</summary>
+      <div class="diag-context-grid">
+        <span class="diag-label">Connected</span>
+        <span class="diag-val">${geminiConnected ? '✓ Yes' : '✗ No key set'}</span>
+        <span class="diag-label">Calls this session</span>
+        <span class="diag-val">${callCount}</span>
+        <span class="diag-label">Last call source</span>
+        <span class="diag-val">${escHtml(lastSource ?? 'none')}</span>
+        <span class="diag-label">Last call at</span>
+        <span class="diag-val">${escHtml(lastCallStr)}</span>
+      </div>
+      <p style="font-size:0.75rem;opacity:0.5;margin:8px 0 0;">Background tasks (briefing, reviews, session summaries) never call Gemini — only chat does.</p>
+    </details>
 
     <details class="diag-panel diag-context-panel">
       <summary class="diag-summary">Context Snapshot</summary>

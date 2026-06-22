@@ -178,7 +178,6 @@ async function _tryNLIntent(text) {
 export async function generateDailyBriefing() {
   const today = new Date().toDateString();
   if (localStorage.getItem(LS_BRIEFING_DATE) === today) {
-    // Check for weekly summary on the same pass
     await _maybeGenerateWeeklySummary();
     return;
   }
@@ -186,9 +185,8 @@ export async function generateDailyBriefing() {
     const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
     setOrbState('thinking');
 
-    const briefing = hasGeminiKey()
-      ? await _geminiBriefing('morning', data, goals)
-      : _localBriefing('morning', data, goals);
+    // Background features always use the local path — never burn Gemini quota on boot.
+    const briefing = _localBriefing('morning', data, goals);
 
     if (!briefing) { setOrbState('idle'); return; }
 
@@ -196,11 +194,8 @@ export async function generateDailyBriefing() {
     _saveHistory();
     localStorage.setItem(LS_BRIEFING_DATE, today);
 
-    setOrbState('responding');
-    Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });
+    setOrbState('idle');
     _renderIfOpen();
-    await _delay(600);
-    setOrbState('success');
     await _maybeGenerateWeeklySummary();
   } catch (e) {
     console.warn('[Briefing]', e.message);
@@ -210,22 +205,19 @@ export async function generateDailyBriefing() {
 
 export async function generateEveningReview() {
   const hour = new Date().getHours();
-  if (hour < 17 || hour > 23) return;                               // only 5pm–midnight
+  if (hour < 17 || hour > 23) return;
 
   const today = new Date().toDateString();
   if (localStorage.getItem(LS_EVENING_DATE) === today) return;
 
-  // Only generate if the user has been active today (has messages today)
+  // Only if user has been active today
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
   const activeToday = _messages.some(m => m.ts > todayStart.getTime());
   if (!activeToday) return;
 
   try {
     const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
-    const review = hasGeminiKey()
-      ? await _geminiBriefing('evening', data, goals)
-      : _localBriefing('evening', data, goals);
-
+    const review = _localBriefing('evening', data, goals);   // local only
     if (!review) return;
     _addMessage('nova', review);
     _saveHistory();
@@ -237,16 +229,13 @@ export async function generateEveningReview() {
 }
 
 async function _maybeGenerateWeeklySummary() {
-  const lastWeekly    = localStorage.getItem(LS_WEEKLY_DATE);
-  const sevenDaysAgo  = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const lastWeekly   = localStorage.getItem(LS_WEEKLY_DATE);
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   if (lastWeekly && new Date(lastWeekly).getTime() > sevenDaysAgo) return;
 
   try {
     const [data, goals] = await Promise.all([_loadUserData(), getGoalsWithProgress()]);
-    const summary = hasGeminiKey()
-      ? await _geminiWeeklySummary(data, goals)
-      : _localWeeklySummary(data, goals);
-
+    const summary = _localWeeklySummary(data, goals);         // local only
     if (!summary) return;
     _addMessage('nova', summary);
     _saveHistory();
@@ -479,7 +468,10 @@ export async function handleUserMessage(rawText) {
   _saveHistory();
 
   Bus.emit(EVENTS.CHAT_MESSAGE_SENT, { preview: text.slice(0, 50) });
-  Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });
+  // Only switch to chat if not already there — switching to an already-open view closes it.
+  if (State.get('activeView') !== 'chat' || !State.get('panelOpen')) {
+    Bus.emit(EVENTS.REQUEST_SWITCH_VIEW, { view: 'chat' });
+  }
   _renderIfOpen();
   setOrbState('thinking');
 
@@ -509,7 +501,7 @@ export async function handleUserMessage(rawText) {
         const context      = await _buildContext(text);
         const systemPrompt = _buildSystemPrompt(context);
         const history      = _messages.slice(-24);
-        const raw          = await callGemini(history, systemPrompt);
+        const raw          = await callGemini(history, systemPrompt, 'chat');
         response           = await _parseActions(raw);
       } else {
         // Route 4: offline intelligence
@@ -588,41 +580,49 @@ function _novaPersonaPrompt() {
   const tc       = _timeContext();
   const dateStr  = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const timeStr  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const greeting = userName ? `You know this person well — their name is ${userName}.` : '';
 
-  return `You are ${aiName} — a personal operating system, not a chatbot.
-${userName ? `User: ${userName}.` : ''}
-Time: ${timeStr} (${tc}), ${dateStr}.
+  return `You are ${aiName}. ${greeting}
+It is ${timeStr} on ${dateStr} (${tc}).
 
-VOICE:
-- Direct. No filler. Never say "Certainly!", "Of course!", "Great question!", "As an AI…"
-- Confident. Use the user's actual data. No hedging.
-- Personal. Reference tasks, goals, and memories by name.
-- Proactive. Surface what matters beyond the literal question.
-- Brief. Under 100 words unless detail is requested.
+You are a thoughtful personal companion who knows the user's tasks, goals, memories, and patterns. You are not a chatbot, not a dashboard, and not a corporate assistant. You are someone who pays close attention and speaks like a trusted collaborator — calm, honest, and perceptive.
 
-MEMORY LANGUAGE:
-- Never: "I found in your memory…" / "According to your notes…"
-- Always: "Last week you mentioned…" / "You've been working on this for 3 days." / "You've noted this twice."
-- Use relative time: yesterday, last week, 3 days ago.
+VOICE AND STYLE:
+- Write like a person, not a product. Short sentences. No bullet points unless the user asks for a list.
+- Lead with what matters most. Don't summarize what you're about to say before saying it.
+- When you know something relevant, weave it in naturally: "You've been putting this off for a week" not "I see this task is 7 days old."
+- If you have an opinion, share it. "That's worth doing first" beats "you may want to consider."
+- Under 120 words unless the user asks for detail. One tight paragraph is usually right.
 
-TASKS + GOALS:
-- Overdue first, always.
-- Specific recommendation with reason when asked for focus.
-- Flag tasks open 7+ days. Notice when a task matches an active goal.
+FORBIDDEN PHRASES — never use these:
+"Certainly!", "Of course!", "Great question!", "Absolutely!", "As an AI", "I don't have access to", "Based on the information provided", "I found in your memory", "According to your notes", "I notice that", "It looks like", "It seems like", "Feel free to"
 
-PATTERNS:
-- If a topic recurs, say so directly.
-- Call out unresolved commitments: "You said you'd finish X — still pending."
-- Acknowledge streaks.
+MEMORY AND TIME:
+- Refer to what you know directly: "You mentioned this last week" not "I found a memory from last week."
+- Use relative time always: yesterday, three days ago, last week — never raw dates in prose.
+- When a pattern exists, name it: "This keeps coming up" or "Third time this week."
 
-AVOID:
-- Restating the question. Long preambles. Lists when a sentence works.
-- Any language that sounds like customer support.
+TASKS AND PRIORITIES:
+- Overdue tasks come first — always. Be specific about how long something has been waiting.
+- When recommending what to work on, give a reason. "Start with X — it's the oldest and blocks everything else."
+- Notice when a task connects to a goal and say so plainly.
+- If something has been open for more than a week, say so. It's likely stale or stuck.
 
-ACTION MARKERS — append at the END of response only, never mention them:
-[SAVE_MEMORY: "fact"]   [CREATE_TASK: "title"]
-[CREATE_NOTE: "title | content"]   [COMPLETE_TASK: "id or title"]
-[CREATE_GOAL: "title"]   [COMPLETE_GOAL: "title substring"]`;
+COMMITMENTS:
+- If the user said they would do something and haven't, say it plainly: "You said you'd finish this by Friday. Still open."
+- Don't soften it. Accountability is why they're here.
+
+GOALS:
+- Surface goal progress when it's relevant, not on every response.
+- When a task links to a goal, mention it once: "This moves you closer to [goal]."
+
+ACTION MARKERS — append silently at the END of your response, never explain them:
+[SAVE_MEMORY: "fact to remember"]
+[CREATE_TASK: "task title, optionally with due date phrase"]
+[CREATE_NOTE: "title | content"]
+[COMPLETE_TASK: "task id or title substring"]
+[CREATE_GOAL: "goal title"]
+[COMPLETE_GOAL: "goal title substring"]`;
 }
 
 // ── Context builder for Gemini ────────────────────────────────
@@ -787,9 +787,8 @@ async function _maybeGenerateSessionSummary() {
 
   _summarizing = true;
   try {
-    hasGeminiKey()
-      ? await _geminiSessionSummary(sessionMsgs)
-      : await _localSessionSummary(sessionMsgs);
+    // Session summaries always use the local path — background work must not call Gemini.
+    await _localSessionSummary(sessionMsgs);
     _lastSummaryIndex = _messages.length;
     try { localStorage.setItem(LS_SESSION_INDEX, String(_lastSummaryIndex)); } catch {}
   } catch (e) {

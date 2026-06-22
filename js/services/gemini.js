@@ -15,17 +15,30 @@ const ENDPOINT =
 
 const LS_KEY = 'nova_gemini_key';
 
-let _key        = '';
-let _callCount  = 0;
-let _lastSource = null;
-let _lastCallAt = null;
+let _key            = '';
+let _callCount      = 0;
+let _lastSource     = null;
+let _lastCallAt     = null;
+let _lastResponseMs = null;
+let _lastSuccessAt  = null;
+let _lastFailAt     = null;
+let _lastFailMsg    = null;
 
 export function getGeminiStats() {
-  return { callCount: _callCount, lastSource: _lastSource, lastCallAt: _lastCallAt };
+  return {
+    callCount:      _callCount,
+    lastSource:     _lastSource,
+    lastCallAt:     _lastCallAt,
+    lastResponseMs: _lastResponseMs,
+    lastSuccessAt:  _lastSuccessAt,
+    lastFailAt:     _lastFailAt,
+    lastFailMsg:    _lastFailMsg,
+  };
 }
 
 export function resetGeminiStats() {
   _callCount = 0; _lastSource = null; _lastCallAt = null;
+  _lastResponseMs = null; _lastSuccessAt = null; _lastFailAt = null; _lastFailMsg = null;
 }
 
 // ── Key management ────────────────────────────────────────────
@@ -99,6 +112,7 @@ export async function callGemini(history, systemPrompt, source = 'chat') {
     ],
   };
 
+  const t0  = Date.now();
   const res = await fetch(`${ENDPOINT}?key=${encodeURIComponent(key)}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -112,6 +126,9 @@ export async function callGemini(history, systemPrompt, source = 'chat') {
       errMsg = errData?.error?.message || errMsg;
     } catch {}
 
+    _lastFailAt  = new Date().toISOString();
+    _lastFailMsg = errMsg;
+
     if (res.status === 400) throw new Error('BAD_REQUEST: ' + errMsg);
     if (res.status === 401 || res.status === 403) throw new Error('INVALID_KEY');
     if (res.status === 429) throw new Error('RATE_LIMIT');
@@ -120,6 +137,14 @@ export async function callGemini(history, systemPrompt, source = 'chat') {
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('EMPTY_RESPONSE');
+  if (!text) {
+    _lastFailAt  = new Date().toISOString();
+    _lastFailMsg = 'empty response';
+    throw new Error('EMPTY_RESPONSE');
+  }
+
+  _lastResponseMs = Date.now() - t0;
+  _lastSuccessAt  = new Date().toISOString();
+  console.log(`[Gemini] responded in ${_lastResponseMs}ms`);
   return text;
 }

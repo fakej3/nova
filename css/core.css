@@ -748,7 +748,7 @@ input, textarea, select {
 }
 
 .af-sub {
-  font-size: 9px;
+  font-size: 10px;               /* was 9px — unreadable with muted text */
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -758,7 +758,7 @@ input, textarea, select {
 
 .af-time {
   font-family: 'SF Mono', 'Courier New', monospace;
-  font-size: 9px;
+  font-size: 10px;               /* was 9px */
   font-weight: 600;
   color: var(--text-muted);
   flex-shrink: 0;
@@ -1336,9 +1336,9 @@ button, input, select, textarea, .nav-dot, #orb-container {
 }
 
 .conv-ts {
-  font-size: 9px;
+  font-size: 10px;               /* was 9px — invisible with muted text in dark themes */
   color: var(--text-muted);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   padding: 0 2px;
   font-family: 'SF Mono', 'Courier New', monospace;
 }

@@ -66,5 +66,5 @@ export function initActivityFeed() {
   Bus.on(EVENTS.OFFLINE,               ()  => _addEntry('SYSTEM',  'Connection lost',   'Local mode active'));
   Bus.on(EVENTS.APP_READY,             ()  => _addEntry('SYSTEM',  'System ready',      'NOVA initialized'));
   Bus.on(EVENTS.CHAT_MESSAGE_SENT,     (d) => _addEntry('CHAT',    'Message sent',      d?.preview || ''));
-  Bus.on(EVENTS.AI_RESPONSE_RECEIVED,  (d) => _addEntry('SYSTEM',  'AI responded',      d?.preview || ''));
+  Bus.on(EVENTS.AI_RESPONSE_RECEIVED,  (d) => _addEntry('SYSTEM',  'NOVA',              d?.preview || ''));
 }

@@ -91,34 +91,39 @@ function _htmlLoading() {
 }
 
 function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, goalsCount, sessionSummaryCount, geminiStats, geminiConnected, ctx }) {
-  const { callCount, lastSource, lastCallAt } = geminiStats;
-  const lastCallStr = lastCallAt
-    ? new Date(lastCallAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : 'none';
+  const { callCount, lastSource, lastCallAt, lastResponseMs, lastSuccessAt, lastFailAt, lastFailMsg } = geminiStats;
+
+  const _ts = (iso) => iso
+    ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '—';
 
   return `
     <div class="diag-counts">
-      ${_countCell('Notes',    notesCount,    '◈')}
-      ${_countCell('Tasks',    tasksCount,    '◎')}
-      ${_countCell('Events',   eventsCount,   '◉')}
-      ${_countCell('Memories', memoriesCount, '◆')}
-      ${_countCell('Goals',    goalsCount,    '◎')}
-      ${_countCell('Sessions', sessionSummaryCount, '⬡')}
+      ${_countCell('Notes',    notesCount,          '◈')}
+      ${_countCell('Tasks',    tasksCount,           '◎')}
+      ${_countCell('Events',   eventsCount,          '◉')}
+      ${_countCell('Memories', memoriesCount,        '◆')}
+      ${_countCell('Goals',    goalsCount,           '◎')}
+      ${_countCell('Sessions', sessionSummaryCount,  '⬡')}
     </div>
 
     <details class="diag-panel" open>
       <summary class="diag-summary">Gemini API</summary>
       <div class="diag-context-grid">
         <span class="diag-label">Connected</span>
-        <span class="diag-val">${geminiConnected ? '✓ Yes' : '✗ No key set'}</span>
+        <span class="diag-val">${geminiConnected ? '✓ Key set' : '✗ No key'}</span>
         <span class="diag-label">Calls this session</span>
         <span class="diag-val">${callCount}</span>
-        <span class="diag-label">Last call source</span>
-        <span class="diag-val">${escHtml(lastSource ?? 'none')}</span>
-        <span class="diag-label">Last call at</span>
-        <span class="diag-val">${escHtml(lastCallStr)}</span>
+        <span class="diag-label">Last source</span>
+        <span class="diag-val">${escHtml(lastSource ?? '—')}</span>
+        <span class="diag-label">Last response time</span>
+        <span class="diag-val">${lastResponseMs != null ? lastResponseMs + ' ms' : '—'}</span>
+        <span class="diag-label">Last success</span>
+        <span class="diag-val">${_ts(lastSuccessAt)}</span>
+        <span class="diag-label">Last failure</span>
+        <span class="diag-val" style="color:var(--status-error)">${lastFailAt ? _ts(lastFailAt) + (lastFailMsg ? ' · ' + escHtml(lastFailMsg.slice(0, 30)) : '') : '—'}</span>
       </div>
-      <p style="font-size:0.75rem;opacity:0.5;margin:8px 0 0;">Background tasks (briefing, reviews, session summaries) never call Gemini — only chat does.</p>
+      <p style="font-size:0.72rem;color:var(--text-muted);margin:8px 12px 10px;line-height:1.4;">Background tasks never call Gemini. Only chat responses do.</p>
     </details>
 
     <details class="diag-panel diag-context-panel">

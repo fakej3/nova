@@ -111,7 +111,7 @@ export function initConversation() {
 export function isBusy() { return _busy; }
 
 export function clearConversation() {
-  _messages = []; _lastSummaryIndex = 0;
+  _messages = []; _lastSummaryIndex = 0; _conversationStarted = false;
   _saveHistory();
   try { localStorage.removeItem(LS_SESSION_INDEX); } catch {}
 }
@@ -508,7 +508,7 @@ export async function handleUserMessage(rawText) {
         try {
           const context      = await _buildContext(text);
           const systemPrompt = _buildSystemPrompt(context);
-          const history      = _messages.slice(-24);
+          const history      = _messages.slice(-12);
           const raw          = await callGemini(history, systemPrompt, 'chat');
           response           = await _parseActions(raw);
         } catch (geminiErr) {
@@ -763,24 +763,14 @@ async function _getRelevantMemories(userMessage, limit = 6) {
   const baseKeywords     = _extractKeywords(userMessage);
   const expandedKeywords = expandKeywords(baseKeywords);   // synonym expansion (Phase 5)
 
-  if (!expandedKeywords.length) {
-    console.debug('[Memory] No keywords — using recent');
-    return DB.memories.getRecent(limit);
-  }
+  if (!expandedKeywords.length) return DB.memories.getRecent(limit);
 
   const all   = await DB.memories.getAll();
   const facts = all.filter(m => m.type !== 'session_summary' && m.type !== 'commitment');
   if (!facts.length) return [];
 
-  const scored = facts.map(m => ({ memory: m, score: scoreMemory(m, expandedKeywords) }));
+  const scored  = facts.map(m => ({ memory: m, score: scoreMemory(m, expandedKeywords) }));
   const relevant = scored.filter(s => s.score > 0);
-
-  console.debug(`[Memory] "${userMessage.slice(0, 50)}"`);
-  console.debug(`[Memory] Base: [${baseKeywords.join(', ')}] → Expanded: ${expandedKeywords.length} terms`);
-  relevant.slice(0, 5).forEach(s =>
-    console.debug(`  [${s.score}] ${s.memory.content.slice(0, 60)}`)
-  );
-  if (!relevant.length) console.debug('[Memory] No matches — fallback to recent');
 
   if (!relevant.length) return DB.memories.getRecent(limit);
 
@@ -1164,7 +1154,7 @@ function _offlineGeneral(data, goals) {
   }
   if (goals.length) lines.push(formatGoalsBrief(goals));
   if (recurringTopics.length) lines.push(`"${recurringTopics[0].topic}" comes up often.`);
-  lines.push('\nAsk about tasks, goals, memories, progress, or priorities. Or add a Gemini key for full AI.');
+  if (!lines.length) lines.push("What's on your mind?");
   return lines.join('\n');
 }
 
@@ -1208,7 +1198,7 @@ async function _getIdleSuggestions() {
 
 // ── Action marker parser ──────────────────────────────────────
 
-const ACTION_RE = /\[(SAVE_MEMORY|CREATE_TASK|CREATE_NOTE|COMPLETE_TASK|CREATE_GOAL|COMPLETE_GOAL):\s*"([^"]+)"\]/g;
+const ACTION_RE = /\[(SAVE_MEMORY|CREATE_TASK|CREATE_NOTE|COMPLETE_TASK|CREATE_GOAL|COMPLETE_GOAL):\s*["“]([^"”]+)["”]\]/g;
 
 async function _parseActions(rawText) {
   const actions = [];

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nova-v35';
+const CACHE_NAME = 'nova-v36';
 
 const ASSETS = [
   './index.html',
@@ -40,6 +40,7 @@ const ASSETS = [
   './js/modules/conversation.js',
   './js/ui/starfield.js',
   './js/ui/activity-feed.js',
+  './js/ui/home-context.js',
   './js/services/gemini.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',

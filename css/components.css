@@ -1223,11 +1223,11 @@ details[open] .diag-summary::before { content: '▼ '; }
 }
 
 .diag-count-label {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 
 /* Context snapshot panel */
@@ -1266,7 +1266,7 @@ details[open] .diag-summary::before { content: '▼ '; }
 }
 
 .diag-activity-type {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--accent-primary);
   text-transform: uppercase;
@@ -1427,13 +1427,13 @@ details[open] .diag-summary::before { content: '▼ '; }
 
 .mem-source {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   flex: 1;
 }
 
 .mem-ts {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
 }

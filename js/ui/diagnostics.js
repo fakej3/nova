@@ -91,10 +91,17 @@ function _htmlLoading() {
 }
 
 function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, goalsCount, sessionSummaryCount, geminiStats, geminiConnected, ctx }) {
-  const { callCount, lastSource, lastCallAt, lastResponseMs, lastSuccessAt, lastFailAt, lastFailMsg } = geminiStats;
+  const {
+    model, callCount, lastSource, lastCallAt, lastResponseMs,
+    lastSuccessAt, lastFailAt, lastFailMsg, lastStatus, lastTokensIn, lastTokensOut,
+  } = geminiStats;
 
   const _ts = (iso) => iso
     ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : '—';
+
+  const tokenStr = (lastTokensIn != null || lastTokensOut != null)
+    ? `${lastTokensIn ?? '?'} in / ${lastTokensOut ?? '?'} out`
     : '—';
 
   return `
@@ -112,16 +119,22 @@ function _htmlPanel({ notesCount, tasksCount, eventsCount, memoriesCount, goalsC
       <div class="diag-context-grid">
         <span class="diag-label">Connected</span>
         <span class="diag-val">${geminiConnected ? '✓ Key set' : '✗ No key'}</span>
+        <span class="diag-label">Model</span>
+        <span class="diag-val">${escHtml(model)}</span>
         <span class="diag-label">Calls this session</span>
         <span class="diag-val">${callCount}</span>
+        <span class="diag-label">Last request</span>
+        <span class="diag-val">${_ts(lastCallAt)}</span>
         <span class="diag-label">Last source</span>
         <span class="diag-val">${escHtml(lastSource ?? '—')}</span>
         <span class="diag-label">Last response time</span>
         <span class="diag-val">${lastResponseMs != null ? lastResponseMs + ' ms' : '—'}</span>
+        <span class="diag-label">Last tokens</span>
+        <span class="diag-val">${tokenStr}</span>
         <span class="diag-label">Last success</span>
         <span class="diag-val">${_ts(lastSuccessAt)}</span>
         <span class="diag-label">Last failure</span>
-        <span class="diag-val" style="color:var(--status-error)">${lastFailAt ? _ts(lastFailAt) + (lastFailMsg ? ' · ' + escHtml(lastFailMsg.slice(0, 30)) : '') : '—'}</span>
+        <span class="diag-val" style="color:var(--status-error)">${lastFailAt ? _ts(lastFailAt) + (lastFailMsg ? ' · ' + escHtml(lastFailMsg.slice(0, 40)) : '') + (lastStatus ? ` [${lastStatus}]` : '') : '—'}</span>
       </div>
       <p style="font-size:0.72rem;color:var(--text-muted);margin:8px 12px 10px;line-height:1.4;">Background tasks never call Gemini. Only chat responses do.</p>
     </details>

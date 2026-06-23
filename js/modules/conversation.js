@@ -126,8 +126,14 @@ async function _tryNLIntent(text) {
     const { clean: cleanTitle, date, phrase } = parseDueDate(goalIntent.title);
     const id = await createGoal(cleanTitle, '', date);
     await logEvent(EVENT_TYPES.TASK_CREATED, `Goal: ${cleanTitle}`);
-    const duePart = phrase ? ` · target: ${phrase}` : '';
-    return `Goal set: "${cleanTitle}"${duePart}. Link tasks to it by mentioning this goal when creating them.`;
+    const duePart = phrase ? ` by ${phrase}` : '';
+    const goalAcks = [
+      `Working toward "${cleanTitle}"${duePart}. Mention this goal when creating tasks and I'll link them.`,
+      `Got it — "${cleanTitle}" is on the list${duePart}.`,
+      `"${cleanTitle}" is set as a goal${duePart}. Create tasks and mention it to track progress.`,
+      `Added "${cleanTitle}" as a goal${duePart}. Tasks linked to it will show up under it.`,
+    ];
+    return goalAcks[new Date().getDay() % goalAcks.length];
   }
 
   // Task creation with NL due date
@@ -148,8 +154,14 @@ async function _tryNLIntent(text) {
       goalNote = ` Linked to goal: "${relGoal.title}".`;
     }
 
-    const duePart = phrase ? ` Due: ${phrase}.` : '';
-    return `Added: "${title}".${duePart}${goalNote}`;
+    const duePart = phrase ? ` Due ${phrase}.` : '';
+    const taskAcks = [
+      `"${title}" is on the list.${duePart}${goalNote}`,
+      `Added "${title}".${duePart}${goalNote}`,
+      `Got it — "${title}" is queued.${duePart}${goalNote}`,
+      `"${title}" is in your tasks.${duePart}${goalNote}`,
+    ];
+    return taskAcks[new Date().getDay() % taskAcks.length];
   }
 
   // Memory creation
@@ -166,9 +178,10 @@ async function _tryNLIntent(text) {
 
     // If it has a date, offer to create a task
     const follow = phrase
-      ? ` Want me to create a task with a ${phrase} due date?`
+      ? ` Want me to add a task for ${phrase}?`
       : '';
-    return `Got it.${follow}`;
+    const memAcks = [`Got it.${follow}`, `Noted.${follow}`, `Remembered.${follow}`, `I'll keep that in mind.${follow}`];
+    return memAcks[new Date().getDay() % memAcks.length];
   }
 
   return null; // fall through to Gemini / offline
@@ -315,63 +328,129 @@ function _localBriefing(type, data, goals) {
     completedToday, completedThisWeek, streak, sessions, recurringTopics,
   } = data;
 
-  const userName = State.get('userName') || '';
+  const userName  = State.get('userName') || '';
   const isEvening = type === 'evening';
-  const tc        = _timeContext();
-  const greet     = userName ? `Good ${tc}, ${userName}.` : `Good ${tc}.`;
+  // Use day-of-week as rotation seed so consecutive days always differ
+  const seed      = new Date().getDay(); // 0–6
 
-  const lines = [greet, ''];
+  const lines = [];
 
   if (isEvening) {
-    // Evening: day review
+    // — Opening: 4 variants —
+    const openings = [
+      userName ? `Evening, ${userName}.` : 'Evening.',
+      "How'd the day go?",
+      userName ? `Good evening, ${userName}.` : 'Good evening.',
+      'End of another day.',
+    ];
+    lines.push(openings[seed % openings.length], '');
+
     if (completedToday.length) {
-      lines.push(`${completedToday.length} task${completedToday.length !== 1 ? 's' : ''} done today.`);
+      const plural = completedToday.length !== 1;
+      lines.push(`${completedToday.length} thing${plural ? 's' : ''} done today.`);
     } else {
-      lines.push('Nothing completed today yet.');
+      lines.push('Nothing crossed off today yet.');
     }
     if (overdue.length) {
-      lines.push(`${overdue.length} task${overdue.length !== 1 ? 's' : ''} still overdue — carry them into tomorrow?`);
+      lines.push(`${overdue.length} task${overdue.length !== 1 ? 's' : ''} still open — worth carrying into tomorrow.`);
     }
-    if (streak > 1) lines.push(`${streak}-day streak — don't break it.`);
-    lines.push('\nWhat did you learn or decide today?');
+    if (streak > 1) {
+      const streakLines = [
+        `${streak} days in a row.`,
+        `${streak}-day streak going.`,
+        `That's ${streak} days straight.`,
+        `${streak} consecutive days — keep it.`,
+      ];
+      lines.push(streakLines[seed % streakLines.length]);
+    }
+
+    lines.push('\nWhat did you figure out today?');
+
+    // — Closing: 4 variants —
+    const closings = [
+      '\nRest up.',
+      '\nTomorrow\'s fresh.',
+      '\nGood work today.',
+      '',
+    ];
+    lines.push(closings[seed % closings.length]);
+
   } else {
-    // Morning: forward-looking
+    // Morning — Opening: 4 variants —
+    const tc = _timeContext();
+    const openings = [
+      userName ? `Morning, ${userName}.` : 'Morning.',
+      userName ? `Good ${tc}, ${userName}.` : `Good ${tc}.`,
+      "Here's where things stand.",
+      userName ? `Hey ${userName}.` : 'Hey.',
+    ];
+    lines.push(openings[seed % openings.length], '');
+
     if (overdue.length) {
-      const names = overdue.slice(0, 2).map(t => `"${t.title}"`).join(', ');
-      lines.push(`${overdue.length} overdue: ${names}${overdue.length > 2 ? ` +${overdue.length - 2}` : ''}.`);
+      const names = overdue.slice(0, 2).map(t => `"${t.title}"`).join(' and ');
+      const extra = overdue.length > 2 ? ` Plus ${overdue.length - 2} more.` : '';
+      lines.push(`${names} ${overdue.length > 1 ? 'are' : 'is'} overdue.${extra}`);
     }
     if (dueToday.length) {
-      lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
+      if (dueToday.length === 1) {
+        lines.push(`"${dueToday[0].title}" is due today.`);
+      } else {
+        lines.push(`Due today: ${dueToday.map(t => `"${t.title}"`).join(', ')}.`);
+      }
     }
+
     const top = overdue[0] || dueToday[0] || highPri[0]
       || [...pending].sort((a, b) => a.priority - b.priority)[0];
     if (top) {
       const age = Math.floor((Date.now() - new Date(top.createdAt)) / 86400000);
-      lines.push(`\nStart with: "${top.title}"${age > 3 ? ` — ${age} days open` : ''}.`);
+      // 4 ways to surface the top task
+      const topLines = [
+        `"${top.title}" is probably the right place to start.${age > 3 ? ` It's been open ${age} days.` : ''}`,
+        `If you only do one thing today, make it "${top.title}".`,
+        `"${top.title}" has been waiting${age > 3 ? ` ${age} days` : ''} — worth tackling first.`,
+        `I'd go with "${top.title}" first.${age > 3 ? ` ${age} days open.` : ''}`,
+      ];
+      lines.push('\n' + topLines[seed % topLines.length]);
     }
+
+    if (goals.length) {
+      const brief = formatGoalsBrief(goals);
+      lines.push(`\n${brief}.`);
+    }
+
+    if (recurringTopics.length) {
+      const t = recurringTopics[0];
+      const topicLines = [
+        `"${t.topic}" keeps coming up — ${t.count} times now.`,
+        `You've mentioned "${t.topic}" ${t.count} times recently.`,
+        `"${t.topic}" seems to be on your mind.`,
+        `Noticed "${t.topic}" coming up a lot.`,
+      ];
+      lines.push(topicLines[seed % topicLines.length]);
+    }
+
+    if (sessions.length) {
+      const raw = sessions[0].content
+        .replace(/^Session:\s*/i, '')
+        .replace(/^User discussed\s*/i, '')
+        .slice(0, 90);
+      lines.push(`\nLast time: ${raw}${raw.length >= 90 ? '…' : ''}`);
+    }
+
+    if (stale.length && !overdue.length) {
+      lines.push(`\n${stale.length} thing${stale.length !== 1 ? 's have' : ' has'} been sitting open for over a week.`);
+    }
+
+    // — Closing: 4 variants (morning) —
+    const closings = [
+      '\nWhat are you working on today?',
+      '\nWhat\'s first?',
+      '\nWhat\'s the plan?',
+      '\nWhere do you want to start?',
+    ];
+    lines.push(closings[seed % closings.length]);
   }
 
-  // Goals
-  if (goals.length) {
-    const brief = formatGoalsBrief(goals);
-    lines.push(`\nGoals: ${brief}.`);
-  }
-
-  // Recurring topic
-  if (recurringTopics.length) {
-    lines.push(`You've been thinking about "${recurringTopics[0].topic}" lately.`);
-  }
-
-  // Last session context
-  if (sessions.length && !isEvening) {
-    lines.push(`\nLast time: ${sessions[0].content.slice(0, 90)}${sessions[0].content.length > 90 ? '…' : ''}`);
-  }
-
-  if (stale.length && !overdue.length) {
-    lines.push(`\n${stale.length} task${stale.length !== 1 ? 's have' : ' has'} been open over a week.`);
-  }
-
-  lines.push(isEvening ? '\nGet some rest.' : '\nWhat are you working on today?');
   return lines.join('\n');
 }
 
@@ -433,9 +512,10 @@ async function _saveCommitment(action, timeframe) {
   await DB.memories.create({ type: 'commitment', content, source: 'user', tags: ['commitment'] });
 }
 
-async function _getUnresolvedCommitments(data) {
+async function _getUnresolvedCommitments(data, preloaded = null) {
   try {
-    const commitments = await DB.memories.getByType('commitment');
+    const all = preloaded ?? await DB.memories.getAll();
+    const commitments = all.filter(m => m.type === 'commitment');
     if (!commitments.length) return [];
 
     const { completed } = data;
@@ -517,10 +597,7 @@ export async function handleUserMessage(rawText) {
             throw geminiErr;
           }
           console.warn('[Gemini] fallback to offline:', geminiErr.message);
-          const note = geminiErr.message === 'RATE_LIMIT'
-            ? 'Gemini hit its rate limit. Using local analysis for now.\n\n'
-            : 'Gemini didn\'t respond. Using local analysis.\n\n';
-          response = note + await _offlineResponse(text);
+          response = await _offlineResponse(text);
         }
       } else {
         // Route 4: offline intelligence
@@ -539,6 +616,7 @@ export async function handleUserMessage(rawText) {
     await logEvent(EVENT_TYPES.AI_RESPONDED, 'AI response generated');
     await _delay(500);
     setOrbState('success');
+    document.getElementById('nova-input')?.focus();
 
   } catch (err) {
     console.error('[Conversation]', err.message);
@@ -648,20 +726,22 @@ ACTION MARKERS — append silently at the END of your response, never explain th
 
 async function _buildContext(userMessage = '') {
   try {
-    const [data, goalsWithProgress] = await Promise.all([
-      _loadUserData(),
-      getGoalsWithProgress(),
-    ]);
+    const data = await _loadUserData();
     const {
       pending, completed, overdue, dueToday, highPri, stale,
-      completedThisWeek, completedToday, allNotes, facts,
+      completedThisWeek, completedToday, allNotes, facts, allTasks, allMems,
       sessions, recurringTopics, streak,
     } = data;
 
+    // Pass pre-loaded arrays to avoid redundant DB reads
+    const [goalsWithProgress, relevantMems] = await Promise.all([
+      getGoalsWithProgress(allTasks),
+      _getRelevantMemories(userMessage, userMessage.length < 50 ? 4 : 6, allMems),
+    ]);
+    const commitments = await _getUnresolvedCommitments(data, allMems);
+
     const recentNotes   = [...allNotes].sort((a, b) => b.updatedAt > a.updatedAt ? 1 : -1).slice(0, 5);
     const recentPending = [...pending].sort((a, b) => a.priority - b.priority).slice(0, 8);
-    const relevantMems  = await _getRelevantMemories(userMessage, 6);
-    const commitments   = await _getUnresolvedCommitments(data);
 
     return {
       recentNotes, recentPending, completed, overdue, dueToday, highPri, stale,
@@ -697,7 +777,7 @@ function _buildSystemPrompt(ctx) {
           ? ` · due ${new Date(t.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
           : '';
         const flag = overdue.includes(t) ? ' ⚠ OVERDUE' : dueToday.includes(t) ? ' · DUE TODAY' : '';
-        return `• [${t.id}] [${p}]${flag} "${t.title}"${due} (${_taskAge(t)})`;
+        return `• [${p}]${flag} "${t.title}"${due} (${_taskAge(t)})`;
       }).join('\n')
     : 'None.';
 
@@ -729,7 +809,7 @@ function _buildSystemPrompt(ctx) {
 ${formatGoalsForContext(goals)}
 
 == TASKS ==
-Notes (${allNotes.length}): ${notesSummary}
+Notes: ${notesSummary}
 Pending (${recentPending.length} shown):
 ${tasksSummary}
 Overdue: ${overdue.length} · Due today: ${dueToday.length} · Stale 7d+: ${stale.length}
@@ -738,9 +818,8 @@ Completed: ${completed.length} total · Progress: ${progressNote}
 == MEMORY ==
 Recurring topics:
 ${topicLines}
-Relevant memories (keyword-matched, synonym-expanded):
+Relevant memories:
 ${memsSummary}
-Stored total: ${memCount}
 
 == CONTINUITY ==
 Previous sessions:
@@ -759,13 +838,13 @@ function _extractKeywords(text) {
     .filter(w => w.length > 2 && !STOP_WORDS.has(w));
 }
 
-async function _getRelevantMemories(userMessage, limit = 6) {
+async function _getRelevantMemories(userMessage, limit = 6, preloaded = null) {
   const baseKeywords     = _extractKeywords(userMessage);
   const expandedKeywords = expandKeywords(baseKeywords);   // synonym expansion (Phase 5)
 
   if (!expandedKeywords.length) return DB.memories.getRecent(limit);
 
-  const all   = await DB.memories.getAll();
+  const all   = preloaded ?? await DB.memories.getAll();
   const facts = all.filter(m => m.type !== 'session_summary' && m.type !== 'commitment');
   if (!facts.length) return [];
 
@@ -859,13 +938,13 @@ async function _loadUserData() {
   const completedToday     = completed.filter(t => t.completedAt && new Date(t.completedAt) >= todayStart);
 
   const facts    = allMems.filter(m => m.type !== 'session_summary' && m.type !== 'commitment');
-  const sessions = await _getSessionSummaries(3);
+  const sessions = await _getSessionSummaries(2);
   const recurringTopics = _detectRecurringTopics(facts);
   const streak          = _computeStreak(completed);
 
   return {
     pending, completed, overdue, dueToday, highPri, stale,
-    completedThisWeek, completedToday, allNotes, facts, sessions,
+    completedThisWeek, completedToday, allNotes, facts, allTasks, allMems, sessions,
     recurringTopics, streak, now,
   };
 }
@@ -1409,15 +1488,31 @@ export function renderConversationPanel() {
     return;
   }
 
-  content.innerHTML = `<div class="conv-list">${_messages.map(_renderMessage).join('')}</div>`;
-  requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
+  // Append-only: if a conv-list already exists, only add new messages
+  let list = content.querySelector('.conv-list');
+  if (list) {
+    const rendered = list.children.length;
+    const toAdd = _messages.slice(rendered);
+    if (toAdd.length) {
+      const atBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 80;
+      toAdd.forEach(msg => {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = _renderMessage(msg);
+        list.appendChild(tmp.firstElementChild);
+      });
+      if (atBottom) requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
+    }
+  } else {
+    content.innerHTML = `<div class="conv-list">${_messages.map(_renderMessage).join('')}</div>`;
+    requestAnimationFrame(() => { content.scrollTop = content.scrollHeight; });
+  }
 }
 
 function _wireSuggestionButtons(content) {
   content.querySelectorAll('.conv-suggest').forEach(btn => {
     btn.addEventListener('click', () => {
-      const input = document.getElementById('nova-input');
-      if (input) { input.value = btn.dataset.q; input.focus(); }
+      const q = btn.dataset.q;
+      if (q) handleUserMessage(q);
     });
   });
 }

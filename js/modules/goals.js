@@ -25,6 +25,7 @@ export async function createGoal(title, description = '', targetDate = null) {
 
 export async function completeGoal(id) {
   const goal = await DB.goals.get(id);
+  if (!goal) return;
   await DB.goals.update(id, { status: 'completed' });
   Bus.emit(EVENTS.GOAL_COMPLETED, { id, title: goal?.title || '' });
   showToast('◎ Goal completed', 'success', 2000);
@@ -41,10 +42,10 @@ export async function linkTaskToGoal(goalId, taskId) {
  * Load all active goals and compute progress from linked tasks.
  * Returns array of goal objects with a `progress` field (0–100).
  */
-export async function getGoalsWithProgress() {
+export async function getGoalsWithProgress(preloadedTasks = null) {
   const [allGoals, allTasks] = await Promise.all([
     DB.goals.getActive(),
-    DB.tasks.getAll(),
+    preloadedTasks ? Promise.resolve(preloadedTasks) : DB.tasks.getAll(),
   ]);
 
   return allGoals.map(g => {

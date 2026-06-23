@@ -76,6 +76,18 @@ export async function deleteTask(id) {
   Bus.emit(EVENTS.TASK_DELETED, { id });
   showToast('Task deleted', 'info', 2000);
   _deleteLinkedMemory(id);
+  _removeTaskFromGoals(id).catch(() => {});
+}
+
+async function _removeTaskFromGoals(taskId) {
+  const allGoals = await DB.goals.getAll();
+  for (const g of allGoals) {
+    if ((g.linkedTaskIds || []).includes(taskId)) {
+      await DB.goals.update(g.id, {
+        linkedTaskIds: g.linkedTaskIds.filter(t => t !== taskId),
+      });
+    }
+  }
 }
 
 async function _deleteLinkedMemory(sourceId) {

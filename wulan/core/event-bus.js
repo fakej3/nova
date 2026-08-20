@@ -2,6 +2,11 @@
 // Runtime-agnostic contract: any future UI, server, native client, or language adapter
 // can publish/subscribe to the same conceptual event envelope.
 
+function createEventId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export class WulanEventBus {
   constructor() {
     this.listeners = new Map();
@@ -10,6 +15,7 @@ export class WulanEventBus {
   }
 
   on(type, handler) {
+    if (typeof handler !== 'function') throw new TypeError('Event handler must be a function');
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type).add(handler);
     return () => this.off(type, handler);
@@ -20,8 +26,9 @@ export class WulanEventBus {
   }
 
   emit(type, payload = {}, meta = {}) {
+    if (!type) throw new TypeError('Event type is required');
     const event = {
-      id: crypto.randomUUID(),
+      id: createEventId(),
       type,
       timestamp: new Date().toISOString(),
       source: meta.source ?? 'wulan-core',
@@ -48,7 +55,7 @@ export class WulanEventBus {
   }
 
   recent(limit = 50) {
-    return this.history.slice(-limit);
+    return this.history.slice(Math.max(0, this.history.length - limit));
   }
 }
 
@@ -60,6 +67,7 @@ export const WULAN_EVENTS = Object.freeze({
   AGENT_FAILED: 'agent.failed',
   TOOL_CALLED: 'tool.called',
   TOOL_FINISHED: 'tool.finished',
+  TOOL_FAILED: 'tool.failed',
   MEMORY_RETRIEVED: 'memory.retrieved',
   MEMORY_CREATED: 'memory.created',
   LEARNING_FEEDBACK: 'learning.feedback',

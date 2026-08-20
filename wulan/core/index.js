@@ -1,9 +1,15 @@
 import { WulanEventBus, WULAN_EVENTS } from './event-bus.js';
 import { CapabilityRegistry } from './capabilities.js';
+import { WulanMemoryStore } from './memory.js';
+import { WulanLearningStore } from './learning.js';
+import { WulanAIGateway } from './ai-gateway.js';
 
 export function createWulanCore() {
   const events = new WulanEventBus();
   const capabilities = new CapabilityRegistry();
+  const memory = new WulanMemoryStore();
+  const learning = new WulanLearningStore();
+  const ai = new WulanAIGateway();
 
   const state = {
     status: 'booting',
@@ -14,6 +20,9 @@ export function createWulanCore() {
   const core = {
     events,
     capabilities,
+    memory,
+    learning,
+    ai,
     state,
 
     registerAgent(agent) {
@@ -73,6 +82,24 @@ export function createWulanCore() {
         }, { correlationId });
         throw error;
       }
+    },
+
+    recordFeedback(input) {
+      const record = learning.record(input);
+      events.emit(WULAN_EVENTS.LEARNING_FEEDBACK, { record });
+      return record;
+    },
+
+    remember(input) {
+      const memoryEntry = memory.add(input);
+      events.emit(WULAN_EVENTS.MEMORY_CREATED, { memory: memoryEntry });
+      return memoryEntry;
+    },
+
+    searchMemory(query, options = {}) {
+      const results = memory.search(query, options);
+      events.emit(WULAN_EVENTS.MEMORY_RETRIEVED, { query, count: results.length });
+      return results;
     },
 
     boot() {

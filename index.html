@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#04060b">
+  <meta name="description" content="Wulan — Personal AI Operating System">
+  <title>WULAN — Personal AI OS</title>
+  <link rel="stylesheet" href="css/nova2.css">
+</head>
+<body>
+  <canvas id="nova-canvas" aria-hidden="true"></canvas>
+  <div class="scanlines" aria-hidden="true"></div>
+  <main class="shell">
+    <header class="topbar glass">
+      <div class="brand"><div class="brand-mark">W</div><div><div class="brand-name">WULAN</div><div class="brand-sub">PERSONAL INTELLIGENCE SYSTEM</div></div></div>
+      <div class="status"><span class="online"><i></i> CORE ONLINE</span><span id="clock">--:--</span><span class="mode">LOCAL-FIRST</span></div>
+    </header>
+    <nav class="left-rail glass" aria-label="Wulan layers">
+      <button class="rail-btn active" data-view="world" title="World"><span>◎</span></button>
+      <button class="rail-btn" data-view="agents" title="Agents"><span>◇</span></button>
+      <button class="rail-btn" data-view="memory" title="Memory"><span>◈</span></button>
+      <button class="rail-btn" data-view="projects" title="Projects"><span>▦</span></button>
+      <button class="rail-btn" data-view="devices" title="Devices"><span>⌁</span></button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" data-view="settings" title="Settings"><span>⚙</span></button>
+    </nav>
+    <aside class="panel left-panel glass">
+      <div class="panel-title"><span>SYSTEM STATE</span><span class="live-label">LIVE</span></div>
+      <div class="metric"><span>CORE</span><b class="green" id="core-status">BOOTING</b></div>
+      <div class="metric"><span>MEMORY</span><b>LOCAL</b></div>
+      <div class="metric"><span>NETWORK</span><b>CONNECTED</b></div>
+      <div class="metric"><span>AGENTS</span><b id="agent-count">04</b></div>
+      <div class="metric"><span>ACTIVE THREADS</span><b id="threads">00</b></div>
+      <div class="section-rule"></div>
+      <div class="mini-title">CURRENT FOCUS</div>
+      <div class="focus-card"><span class="focus-dot"></span><div><strong id="focus-name">Wulan World</strong><small id="focus-meta">Core initializing</small></div></div>
+    </aside>
+    <aside class="panel right-panel glass">
+      <div class="panel-title"><span>AGENT NETWORK</span><span>4 OPERATORS</span></div>
+      <div class="agent-row active-agent" data-agent="atlas"><i class="agent-dot atlas"></i><span class="agent-name">ATLAS</span><span class="agent-role">RESEARCH</span><span class="agent-state">ACTIVE</span></div>
+      <div class="agent-row" data-agent="leon"><i class="agent-dot leon"></i><span class="agent-name">LEON</span><span class="agent-role">BUILD</span><span class="agent-state idle">IDLE</span></div>
+      <div class="agent-row" data-agent="oracle"><i class="agent-dot oracle"></i><span class="agent-name">ORACLE</span><span class="agent-role">ANALYSIS</span><span class="agent-state idle">IDLE</span></div>
+      <div class="agent-row" data-agent="pixel"><i class="agent-dot pixel"></i><span class="agent-name">PIXEL</span><span class="agent-role">CREATIVE</span><span class="agent-state idle">IDLE</span></div>
+      <div class="section-rule"></div>
+      <div class="mini-title">INTEGRATIONS</div>
+      <div class="integration-row"><span>GITHUB</span><b>READY</b></div>
+      <div class="integration-row"><span>SENTINEL</span><b class="muted">DORMANT</b></div>
+      <div class="integration-row"><span>EDGELAB</span><b class="muted">DORMANT</b></div>
+    </aside>
+    <section class="center" aria-label="Wulan command center">
+      <div class="world-title"><span class="eyebrow">PERSONAL WORLD</span><h1>Everything connected.</h1><p>Memory · Agents · Projects · Tools · Devices</p></div>
+      <div class="core-card glass">
+        <div class="core-line"><span class="core-label">WULAN CORE · COMMAND INTERFACE</span><span class="core-state" id="core-state">BOOTING</span></div>
+        <div class="prompt"><button class="voice" id="voice" aria-label="Voice input">◉</button><input id="nova-input" autocomplete="off" placeholder="Talk to Wulan…" aria-label="Talk to Wulan"><button class="send" id="nova-send" aria-label="Send">↗</button></div>
+      </div>
+    </section>
+    <footer class="bottom glass"><div><span class="live">● LIVE WORLD</span><span class="tag">BRAIN</span><span class="tag">MEMORY</span><span class="tag">AGENTS</span></div><div>WULAN · FOUNDATION 01</div></footer>
+    <div id="node-inspector" class="node-inspector glass" aria-live="polite"><div class="inspector-kicker">NODE</div><div class="inspector-name">WULAN</div><div class="inspector-meta">CORE · ONLINE</div></div>
+    <div id="nova-toast" class="toast glass" aria-live="polite"></div>
+  </main>
+  <script type="module" src="wulan2-shell.js"></script>
+  <script>const clock=document.getElementById('clock');const tick=()=>clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});tick();setInterval(tick,1000);</script>
+</body>
+</html>

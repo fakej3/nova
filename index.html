@@ -1,456 +1,61 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="gold">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="NOVA — AI Operating System" />
-  <meta name="theme-color" content="#05070d" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="NOVA" />
-
-  <title>NOVA</title>
-  <link rel="manifest" href="manifest.json" />
-
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2305070d'/><text y='72' x='50' text-anchor='middle' font-size='64' font-family='system-ui,sans-serif' font-weight='700' fill='%23c8922a'>N</text></svg>" />
-
-  <link rel="stylesheet" href="css/core.css" />
-  <link rel="stylesheet" href="css/themes.css" />
-  <link rel="stylesheet" href="css/orb.css" />
-  <link rel="stylesheet" href="css/components.css" />
-  <link rel="stylesheet" href="css/transitions.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#05070c">
+  <meta name="description" content="NOVA — Personal AI Operating System">
+  <title>NOVA — Personal AI OS</title>
+  <link rel="stylesheet" href="css/nova2.css">
 </head>
 <body>
-
-  <!-- Deep space starfield — behind everything -->
-  <canvas id="starfield-canvas" aria-hidden="true"></canvas>
-
-  <div id="app">
-
-    <!-- Ambient particle layer -->
-    <canvas id="particles-canvas" aria-hidden="true"></canvas>
-
-    <!-- Corner frame brackets -->
-    <div id="hud-overlay" aria-hidden="true">
-      <div class="hud-corner corner-tl"></div>
-      <div class="hud-corner corner-tr"></div>
-      <div class="hud-corner corner-bl"></div>
-      <div class="hud-corner corner-br"></div>
-      <div id="nova-greeting" style="display:none" aria-hidden="true"></div>
-    </div>
-
-    <!-- System top bar -->
-    <header id="top-bar" aria-label="System status">
-      <!-- LEFT: Clock + Date -->
-      <div id="top-clock">
-        <div id="clock-display" aria-live="polite" aria-label="Current time">
-          <span id="clock-time">00:00:00</span>
-          <span id="clock-date">Loading...</span>
-        </div>
-      </div>
-
-      <!-- CENTER: NOVA Brand -->
-      <div id="top-brand">
-        <span id="ai-name-display">NOVA</span>
-        <span class="brand-sub">AI OPERATING SYSTEM</span>
-      </div>
-
-      <!-- HIDDEN: kept for hud.js updateSystemBar() — not displayed -->
-      <div id="top-data" aria-hidden="true" style="display:none">
-        <span id="sys-notes">0</span>
-        <span id="sys-tasks">0</span>
-        <span id="sys-uptime">00:00</span>
-      </div>
-
-      <!-- RIGHT: Status indicators -->
-      <div id="top-right">
-        <div class="top-status-pair">
-          <div id="connectivity-dot" title="Connection status" aria-label="Connection status" role="status"></div>
-          <span class="top-status-label">ONLINE</span>
-        </div>
-        <div class="top-status-pair">
-          <div class="status-secure-dot"></div>
-          <span class="top-status-label">SECURE</span>
-        </div>
-        <div id="top-status">
-          <span class="status-dot"></span>
-          <span>INITIALIZING</span>
-        </div>
-      </div>
+  <canvas id="nova-canvas" aria-hidden="true"></canvas>
+  <main class="shell">
+    <header class="topbar glass">
+      <div class="brand"><div class="brand-mark">N</div><div><div class="brand-name">NOVA</div><div class="brand-sub">PERSONAL AI OPERATING SYSTEM</div></div></div>
+      <div class="status"><span><i></i> CORE ONLINE</span><span id="clock">--:--</span><span>LOCAL-FIRST</span></div>
     </header>
 
-    <!-- Left nav rail -->
-    <nav id="nav-dots" aria-label="Navigation">
-      <div class="nav-logo" aria-hidden="true">N</div>
-      <div class="nav-items">
-        <button class="nav-dot active" data-view="home" title="Home" aria-label="Home view" aria-pressed="true">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">HOME</span>
-            <span class="nav-sublabel">Overview</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="notes" title="Notes" aria-label="Notes view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">NOTES</span>
-            <span class="nav-sublabel">Your thoughts</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="tasks" title="Tasks" aria-label="Tasks view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">TASKS</span>
-            <span class="nav-sublabel">To-do list</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="events" title="Timeline" aria-label="Activity timeline view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">TIMELINE</span>
-            <span class="nav-sublabel">Activity feed</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="memories" title="Memories" aria-label="Memory center view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.5 8.5 23 9.5 17.5 14.5 19 22 12 18.5 5 22 6.5 14.5 1 9.5 8.5 8.5 12 2"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">MEMORY</span>
-            <span class="nav-sublabel">Knowledge base</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="search" title="Search (⌘K)" aria-label="Global search view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">SEARCH</span>
-            <span class="nav-sublabel">Find anything</span>
-          </span>
-        </button>
-        <button class="nav-dot" data-view="chat" title="Conversation" aria-label="Conversation view" aria-pressed="false">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">CHAT</span>
-            <span class="nav-sublabel">Talk to NOVA</span>
-          </span>
-        </button>
-      </div>
-      <div class="nav-foot">
-        <button id="settings-btn" aria-label="Settings" title="System Settings">
-          <span class="nav-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </span>
-          <span class="nav-text">
-            <span class="nav-label">SETTINGS</span>
-            <span class="nav-sublabel">System config</span>
-          </span>
-        </button>
-      </div>
+    <nav class="left-rail glass" aria-label="NOVA layers">
+      <button class="rail-btn active" data-view="brain" title="Brain">◉</button>
+      <button class="rail-btn" data-view="agents" title="Agents">◇</button>
+      <button class="rail-btn" data-view="memory" title="Memory">◈</button>
+      <button class="rail-btn" data-view="projects" title="Projects">▦</button>
+      <button class="rail-btn" data-view="devices" title="Devices">⌁</button>
+      <div class="rail-spacer"></div>
+      <button class="rail-btn" data-view="settings" title="Settings">⚙</button>
     </nav>
 
-    <!-- Left data column — Core Status / Memory / Tasks / Uptime -->
-    <aside id="left-data" aria-hidden="true">
-      <div class="ld-card" id="ld-core-status">
-        <div class="ld-card-header">
-          <span class="ld-card-icon">✦</span>
-          <span class="ld-card-title">CORE STATUS</span>
-        </div>
-        <div class="ld-card-body">
-          <span class="ld-status-value" id="fui-orb-state">IDLE</span>
-          <span class="ld-status-good">All systems operational</span>
-        </div>
-      </div>
-
-      <div class="ld-card">
-        <div class="ld-card-header">
-          <span class="ld-card-icon">◈</span>
-          <span class="ld-card-title">NOTES</span>
-        </div>
-        <div class="ld-card-body">
-          <span class="ld-big-num" id="fui-note-count">00</span>
-          <span class="ld-big-sub">notes stored</span>
-        </div>
-      </div>
-
-      <div class="ld-card">
-        <div class="ld-card-header">
-          <span class="ld-card-icon">◉</span>
-          <span class="ld-card-title">TASKS</span>
-        </div>
-        <div class="ld-card-body ld-task-body">
-          <div class="ld-task-row">
-            <span class="ld-task-num" id="fui-pending-count">00</span>
-            <span class="ld-task-lbl">Pending</span>
-          </div>
-          <div class="ld-task-row">
-            <span class="ld-task-num" id="fui-task-count">00</span>
-            <span class="ld-task-lbl">Total</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="ld-card ld-card--uptime">
-        <div class="ld-card-header">
-          <span class="ld-card-icon">◌</span>
-          <span class="ld-card-title">UPTIME</span>
-        </div>
-        <div class="ld-card-body">
-          <span class="ld-uptime" id="fui-uptime-val">00:00</span>
-          <span class="ld-big-sub">system uptime</span>
-        </div>
-      </div>
+    <aside class="panel left-panel glass">
+      <div class="panel-title"><span>SYSTEM STATE</span><span>LIVE</span></div>
+      <div class="metric"><span>CORE</span><b>READY</b></div>
+      <div class="metric"><span>MEMORY</span><b>LOCAL</b></div>
+      <div class="metric"><span>NETWORK</span><b>CONNECTED</b></div>
+      <div class="metric"><span>AGENTS</span><b>04</b></div>
+      <div class="metric"><span>ACTIVE THREADS</span><b>03</b></div>
     </aside>
 
-    <!-- Right activity feed -->
-    <aside id="sys-right" aria-hidden="true">
-      <div class="sysr-header">
-        <span>ACTIVITY FEED</span>
-        <span class="sysr-header-sub">Live system feed</span>
-      </div>
-      <div id="activity-feed-list">
-        <!-- Populated by activity-feed.js -->
-      </div>
+    <aside class="panel right-panel glass">
+      <div class="panel-title"><span>AGENT NETWORK</span><span>4 OPERATORS</span></div>
+      <div class="agent-row"><i class="agent-dot"></i><span class="agent-name">ATLAS</span><span class="agent-role">RESEARCH</span></div>
+      <div class="agent-row"><i class="agent-dot"></i><span class="agent-name">LEON</span><span class="agent-role">BUILD</span></div>
+      <div class="agent-row"><i class="agent-dot idle"></i><span class="agent-name">ORACLE</span><span class="agent-role">ANALYSIS</span></div>
+      <div class="agent-row"><i class="agent-dot idle"></i><span class="agent-name">PIXEL</span><span class="agent-role">CREATIVE</span></div>
     </aside>
 
-    <!-- Main stage: orb + HUD canvas + status label -->
-    <main id="main-stage" aria-label="NOVA interface">
-      <canvas id="orb-hud-canvas" aria-hidden="true"></canvas>
-      <div id="orb-container" class="state-idle" aria-label="NOVA intelligence core" role="img">
-        <div id="orb-field"></div>
-        <div id="orb-ring-3"></div>
-        <div id="orb-glow-outer"></div>
-        <div id="orb-ring-2"></div>
-        <div id="orb-ring-1"></div>
-        <div id="orb">
-          <div id="orb-sphere-highlight"></div>
-          <div id="orb-core"></div>
-          <div id="orb-inner-ring"></div>
-          <div id="orb-scan"></div>
-          <div id="orb-shimmer"></div>
-        </div>
+    <section class="center" aria-label="NOVA command center">
+      <div class="core-card glass">
+        <div class="core-line"><span class="core-label">NOVA CORE · COMMAND INTERFACE</span><span class="core-state" id="core-state">READY</span></div>
+        <div class="prompt"><input id="nova-input" autocomplete="off" placeholder="Ask NOVA anything…" aria-label="Ask NOVA"><button class="send" id="nova-send" aria-label="Send">↗</button></div>
       </div>
-      <!-- Status display below reactor -->
-      <div id="core-status-display" aria-live="polite" aria-label="System state">
-        <span id="orb-status-text">ONLINE · READY</span>
-      </div>
-      <!-- Context panel: focus task, active goal, latest memory -->
-      <div id="home-context" aria-label="Current context" aria-live="polite"></div>
-      <!-- orb-label: kept hidden for any JS that may reference children -->
-      <div id="orb-label" style="display:none" aria-hidden="true">
-        <span>NOVA</span>
-        <span>Ready</span>
-      </div>
-    </main>
+    </section>
 
-    <!-- Side panel -->
-    <aside id="panel" aria-label="Panel" aria-hidden="true">
-      <div id="panel-header">
-        <h2 id="panel-title">Notes</h2>
-        <button id="panel-close" aria-label="Close panel">✕</button>
-      </div>
-      <div id="panel-content">
-        <!-- Populated by modules -->
-      </div>
-    </aside>
-
-    <!-- Panel backdrop -->
-    <div id="panel-backdrop" aria-hidden="true"></div>
-
-    <!-- Input bar -->
-    <div id="input-bar" role="search" aria-label="NOVA input">
-      <div id="input-prefix" aria-hidden="true">›</div>
-      <div id="input-wrapper">
-        <input
-          type="text"
-          id="nova-input"
-          placeholder="Talk to NOVA..."
-          aria-label="Message NOVA"
-          autocomplete="off"
-          autocorrect="off"
-          spellcheck="false"
-          inputmode="text"
-          enterkeyhint="send"
-        />
-        <button id="mic-btn" aria-label="Voice input" title="Start voice input" hidden>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </button>
-        <button id="send-btn" aria-label="Send message" title="Send">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Toast container -->
-    <div id="toast-container" aria-live="polite" aria-label="Notifications"></div>
-
-    <!-- PWA install banner -->
-    <div id="install-banner" aria-label="Install NOVA" role="complementary" hidden>
-      <div id="install-banner-content">
-        <div id="install-banner-text">
-          <strong>Install NOVA</strong>
-          <span>Add to your desktop for faster access</span>
-        </div>
-        <div id="install-banner-actions">
-          <button id="install-btn" class="btn btn-primary btn-sm">Install</button>
-          <button id="install-dismiss" class="btn btn-ghost btn-sm" aria-label="Dismiss">✕</button>
-        </div>
-      </div>
-    </div>
-
-    <button id="install-indicator" hidden aria-label="Install NOVA" title="Install NOVA as a desktop app">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      <span>Install</span>
-    </button>
-
-    <!-- Settings modal -->
-    <div id="settings-modal" class="modal" aria-modal="true" role="dialog" aria-label="Settings" hidden>
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Settings</h3>
-          <button class="modal-close" aria-label="Close settings">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="settings-section">
-            <label class="settings-label">AI Name</label>
-            <input type="text" id="setting-ai-name" class="settings-input" placeholder="NOVA" maxlength="20" />
-          </div>
-          <div class="settings-section">
-            <label class="settings-label">Your Name</label>
-            <input type="text" id="setting-user-name" class="settings-input" placeholder="Enter your name" maxlength="30" />
-          </div>
-          <div class="settings-section">
-            <label class="settings-label" for="setting-gemini-key">Gemini API Key</label>
-            <input type="password" id="setting-gemini-key" class="settings-input" placeholder="AIzaSy…" autocomplete="off" spellcheck="false" />
-            <p class="settings-hint">Free key at <strong>aistudio.google.com</strong> → Get API key · Enables real AI responses</p>
-          </div>
-
-          <div class="settings-section">
-            <label class="settings-label">Theme</label>
-            <div id="theme-picker" class="theme-picker" role="radiogroup" aria-label="Select theme">
-              <button class="theme-option active" data-theme="gold" role="radio" aria-checked="true">
-                <span class="theme-swatch gold-swatch"></span>
-                <span>Gold</span>
-              </button>
-              <button class="theme-option" data-theme="ironman" role="radio" aria-checked="false">
-                <span class="theme-swatch ironman-swatch"></span>
-                <span>Blue</span>
-              </button>
-              <button class="theme-option" data-theme="space" role="radio" aria-checked="false">
-                <span class="theme-swatch space-swatch"></span>
-                <span>Space</span>
-              </button>
-              <button class="theme-option" data-theme="cyberpunk" role="radio" aria-checked="false">
-                <span class="theme-swatch cyberpunk-swatch"></span>
-                <span>Cyberpunk</span>
-              </button>
-              <button class="theme-option" data-theme="minimal" role="radio" aria-checked="false">
-                <span class="theme-swatch minimal-swatch"></span>
-                <span>Minimal</span>
-              </button>
-            </div>
-          </div>
-          <div class="settings-section">
-            <label class="settings-label">Auto Theme by Time of Day</label>
-            <label class="toggle-label">
-              <input type="checkbox" id="setting-auto-theme" />
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              <span class="toggle-text">Switch theme automatically</span>
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="settings-section">
-            <label class="settings-label">Install NOVA</label>
-            <div id="install-section">
-              <!-- Populated by install.js when settings opens -->
-            </div>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="settings-section">
-            <label class="settings-label">System Diagnostics</label>
-            <div id="diagnostics-section">
-              <!-- Populated by diagnostics.js when settings opens -->
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button id="settings-save" class="btn btn-primary">Save Settings</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- First-run onboarding overlay -->
-    <div id="onboarding-overlay" hidden aria-modal="true" role="dialog" aria-label="Welcome to NOVA">
-      <div class="onboarding-backdrop"></div>
-      <div class="onboarding-card">
-        <div class="onboarding-header">
-          <div class="onboarding-logo" aria-hidden="true">◎</div>
-          <h1 class="onboarding-title">NOVA</h1>
-          <p class="onboarding-subtitle">Your personal AI operating system</p>
-        </div>
-        <ul class="onboarding-features" aria-label="Features">
-          <li class="onboarding-feature">
-            <span class="onboarding-icon" aria-hidden="true">◇</span>
-            <div>
-              <strong>Notes</strong>
-              <span>Create and organize notes. Tag them, pin them, search them.</span>
-            </div>
-          </li>
-          <li class="onboarding-feature">
-            <span class="onboarding-icon" aria-hidden="true">○</span>
-            <div>
-              <strong>Tasks</strong>
-              <span>Track what needs to get done. Set priority and due dates.</span>
-            </div>
-          </li>
-          <li class="onboarding-feature">
-            <span class="onboarding-icon" aria-hidden="true">◈</span>
-            <div>
-              <strong>Memory</strong>
-              <span>NOVA builds memory from your notes and tasks automatically.</span>
-            </div>
-          </li>
-          <li class="onboarding-feature">
-            <span class="onboarding-icon" aria-hidden="true">◉</span>
-            <div>
-              <strong>Chat</strong>
-              <span>Ask NOVA about your notes, tasks, and memories. Type below.</span>
-            </div>
-          </li>
-        </ul>
-        <button id="onboarding-start" class="btn btn-primary onboarding-cta">Get started</button>
-      </div>
-    </div>
-
-  </div><!-- #app -->
-
-  <script type="module" src="js/core/app.js"></script>
+    <footer class="bottom glass"><div><span class="live">● LIVE GRAPH</span><span class="tag">BRAIN</span><span class="tag">MEMORY</span><span class="tag">AGENTS</span></div><div>NOVA 2 · FOUNDATION</div></footer>
+    <div id="nova-toast" class="toast glass" aria-live="polite"></div>
+  </main>
+  <script src="js/nova2-shell.js"></script>
+  <script>
+    const clock=document.getElementById('clock');setInterval(()=>clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),1000);clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  </script>
 </body>
 </html>

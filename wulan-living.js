@@ -21,30 +21,129 @@ import { WULAN_EVENTS } from './wulan/core/event-bus.js';
   const memoryHint = $('#memory-hint');
   const providerHint = $('#provider-hint');
 
-  let w=0,h=0,dpr=1,t=0,state='idle',pointer={x:0,y:0,active:false};
-  const particles=[]; const threads=[]; const memories=[];
-  for(let i=0;i<70;i++) particles.push({a:Math.random()*Math.PI*2,r:.15+Math.random()*.9,s:.0002+Math.random()*.0007,sz:.5+Math.random()*1.4,p:Math.random()*6.28});
-  for(let i=0;i<18;i++) threads.push({a:i/18*Math.PI*2,phase:Math.random()*6.28,s:.15+Math.random()*.18});
+  let w=0,h=0,dpr=1,t=0,state='idle';
+  const pointer={x:0,y:0,active:false};
+  const particles=[];
+  const tendrils=[];
+  const sparks=[];
 
-  function resize(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);pointer.x=w/2;pointer.y=h*.54}
+  for(let i=0;i<180;i++) particles.push({a:Math.random()*Math.PI*2,r:.08+Math.random()*.95,phase:Math.random()*6.28,speed:.15+Math.random()*.7,size:.35+Math.random()*1.5});
+  for(let i=0;i<42;i++) tendrils.push({angle:i/42*Math.PI*2+Math.random()*.08,len:.55+Math.random()*.6,width:.5+Math.random()*1.5,phase:Math.random()*6.28,speed:.15+Math.random()*.45,curve:(Math.random()-.5)*.7});
+  for(let i=0;i<28;i++) sparks.push({a:Math.random()*6.28,r:.1+Math.random()*.55,phase:Math.random()*6.28,speed:.4+Math.random()*1.2});
+
+  function resize(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);pointer.x=w/2;pointer.y=h*.53}
   addEventListener('resize',resize);resize();
-  const c=()=>({x:w/2,y:h*.54}); const scale=()=>Math.min(w,h);
-  const energy=()=>({idle:.08,listening:.28,thinking:.72,remembering:.5,acting:.9,learning:.62,error:.2}[state]??.1);
-  function point(a,r,phase=0){const q=c();const e=energy();const wob=Math.sin(a*3+t*.45+phase)*.035+Math.sin(a*7-t*.3)*.018;const rr=r+wob+Math.sin(t*1.3+phase)*(.008+e*.01);return{x:q.x+Math.cos(a)*scale()*.30*rr,y:q.y+Math.sin(a)*scale()*.13*rr}}
+  const center=()=>({x:w/2,y:h*.53});
+  const S=()=>Math.min(w,h);
+  const energy=()=>({idle:.18,listening:.42,thinking:.9,remembering:.58,acting:1,learning:.72,error:.25}[state]??.2);
+
+  function organicPoint(angle,r,phase=0){
+    const q=center(), e=energy();
+    const pulse=1+Math.sin(t*1.35+phase)*(.025+e*.025);
+    const breathing=1+Math.sin(t*.58+phase*.3)*.045;
+    const noise=Math.sin(angle*3.1+t*.38+phase)*.045+Math.sin(angle*7.7-t*.21+phase*2)*.018;
+    const rr=r*(pulse+noise)*breathing;
+    const squeeze=1+Math.sin(t*.27+phase)*.035;
+    return {x:q.x+Math.cos(angle)*S()*.27*rr*squeeze,y:q.y+Math.sin(angle)*S()*.19*rr};
+  }
+
+  function drawTendril(th,index,e){
+    const q=center();
+    const a=th.angle+t*th.speed*.018;
+    const steps=42;
+    ctx.beginPath();
+    for(let j=0;j<=steps;j++){
+      const p=j/steps;
+      const curl=Math.sin(p*4.8+th.phase+t*(.35+e*.7))*.12*p*p;
+      const sway=Math.sin(t*.42+th.phase+p*3)*.025*p;
+      const rr=.07+p*th.len+sway;
+      const pt=organicPoint(a+curl+th.curve*p*p,rr,th.phase);
+      if(j===0)ctx.moveTo(pt.x,pt.y);else ctx.lineTo(pt.x,pt.y);
+    }
+    const alpha=.035+e*.045*(index%4===0?1.5:1);
+    ctx.strokeStyle=index%3===0?`rgba(104,226,255,${alpha})`:index%3===1?`rgba(157,137,255,${alpha*.8})`:`rgba(109,230,190,${alpha*.72})`;
+    ctx.lineWidth=th.width*(.65+e*.5);
+    ctx.stroke();
+  }
 
   function draw(){
-    ctx.clearRect(0,0,w,h);const q=c(),e=energy();
-    const bg=ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,scale()*.62);bg.addColorStop(0,`rgba(71,174,255,${.08+e*.05})`);bg.addColorStop(.45,'rgba(46,67,130,.025)');bg.addColorStop(1,'transparent');ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
-    particles.forEach(p=>{p.a+=p.s*(state==='thinking'?2.4:1);const z=point(p.a,p.r+Math.sin(t*.2+p.p)*.015,p.p);const near=pointer.active?Math.max(0,1-Math.hypot(z.x-pointer.x,z.y-pointer.y)/(scale()*.28)):0;ctx.fillStyle=`rgba(164,220,255,${(.05+e*.1)*(.45+.55*Math.sin(t+p.p)**2)*(1+near)})`;ctx.beginPath();ctx.arc(z.x,z.y,p.sz*(1+near),0,6.283);ctx.fill()});
-    threads.forEach((th,i)=>{const a=th.a+t*th.s*.02,inner=point(a,.12,i),mid=point(a+.18*Math.sin(t*.2+th.phase),.45,i+2),out=point(a+.38*Math.sin(t*.13+th.phase),.98,i+4);ctx.beginPath();ctx.moveTo(inner.x,inner.y);ctx.quadraticCurveTo(mid.x,mid.y,out.x,out.y);ctx.strokeStyle=`rgba(${i%3===0?'121,226,255':i%3===1?'151,127,255':'111,229,180'},${.025+e*.025})`;ctx.lineWidth=.55;ctx.stroke()});
-    const rx=scale()*.105*(1+Math.sin(t*1.6)*.05+e*.06),ry=scale()*.045*(1+Math.sin(t*1.1)*.05+e*.05);
-    for(let ring=0;ring<4;ring++){ctx.beginPath();for(let i=0;i<=120;i++){const a=i/120*6.283,wob=.025*Math.sin(a*(3+ring)+t*1.1)+.014*Math.cos(a*7-t*.8),x=q.x+Math.cos(a)*(rx*(1+ring*.15)+wob*scale()),y=q.y+Math.sin(a)*(ry*(1+ring*.17)+wob*.42*scale());i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.closePath();ctx.strokeStyle=`rgba(121,232,255,${.11-ring*.018+e*.03})`;ctx.lineWidth=ring?.55:.95;ctx.stroke()}
-    const glow=ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,rx*2.7);glow.addColorStop(0,`rgba(111,227,255,${.13+e*.09})`);glow.addColorStop(.3,'rgba(100,130,255,.045)');glow.addColorStop(1,'transparent');ctx.fillStyle=glow;ctx.fillRect(q.x-rx*3,q.y-ry*4,rx*6,ry*8);
-    const eyeW=state==='thinking'?rx*1.5:rx*.8;ctx.beginPath();ctx.ellipse(q.x,q.y,eyeW,Math.max(4,ry*.34),0,0,6.283);ctx.fillStyle='rgba(3,7,13,.75)';ctx.fill();ctx.strokeStyle=`rgba(181,239,255,${.22+e*.15})`;ctx.stroke();ctx.beginPath();ctx.arc(q.x,q.y,3+e*3+Math.sin(t*2)*1.2,0,6.283);ctx.fillStyle='#d8f8ff';ctx.shadowBlur=20;ctx.shadowColor='#79e8ff';ctx.fill();ctx.shadowBlur=0;
-    if(pointer.active){const g=ctx.createRadialGradient(pointer.x,pointer.y,0,pointer.x,pointer.y,scale()*.16);g.addColorStop(0,`rgba(121,232,255,${.035*energy()})`);g.addColorStop(1,'transparent');ctx.fillStyle=g;ctx.fillRect(pointer.x-scale()*.16,pointer.y-scale()*.16,scale()*.32,scale()*.32)}
+    ctx.clearRect(0,0,w,h);
+    const q=center(),e=energy(),size=S();
+    const bg=ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,size*.55);
+    bg.addColorStop(0,`rgba(62,150,255,${.055+e*.055})`);bg.addColorStop(.34,`rgba(68,92,180,${.025+e*.018})`);bg.addColorStop(1,'transparent');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);
+
+    // A quiet field of motes: they drift inward and outward instead of sitting on static rings.
+    particles.forEach((p,i)=>{
+      p.a += .0007*p.speed*(state==='thinking'?3.5:1);
+      const breathe=Math.sin(t*.34+p.phase)*.035;
+      const pt=organicPoint(p.a,p.r+breathe,p.phase);
+      const d=Math.hypot(pt.x-pointer.x,pt.y-pointer.y);
+      const attraction=pointer.active?Math.max(0,1-d/(size*.3)):0;
+      const pulse=(Math.sin(t*(.8+p.speed)+p.phase)+1)/2;
+      ctx.beginPath();ctx.arc(pt.x,pt.y,p.size*(.7+pulse*.7+attraction),0,6.283);
+      ctx.fillStyle=`rgba(167,226,255,${.035+e*.06+attraction*.18})`;ctx.fill();
+    });
+
+    // The presence is a network of living filaments, not a fixed orbit diagram.
+    tendrils.forEach((th,i)=>drawTendril(th,i,e));
+
+    // Moving impulses travel through the filaments.
+    sparks.forEach((s,i)=>{
+      s.a+=.002*s.speed*(state==='thinking'?2.8:1);
+      const pt=organicPoint(s.a,s.r+Math.sin(t*.8+s.phase)*.035,s.phase);
+      const glow=ctx.createRadialGradient(pt.x,pt.y,0,pt.x,pt.y,9+e*8);
+      glow.addColorStop(0,`rgba(205,248,255,${.5+e*.25})`);glow.addColorStop(1,'transparent');
+      ctx.fillStyle=glow;ctx.fillRect(pt.x-14,pt.y-14,28,28);
+      ctx.beginPath();ctx.arc(pt.x,pt.y,1.1+e*.9,0,6.283);ctx.fillStyle='#c9f6ff';ctx.fill();
+    });
+
+    // Soft, asymmetrical living membrane.
+    for(let layer=0;layer<5;layer++){
+      ctx.beginPath();
+      const n=150;
+      for(let i=0;i<=n;i++){
+        const a=i/n*6.283;
+        const base=.12+layer*.055;
+        const wob=.028*Math.sin(a*(3+layer*.7)+t*(.5+layer*.08))+ .017*Math.sin(a*8-t*.32+layer);
+        const rr=base+wob;
+        const x=q.x+Math.cos(a)*size*.55*rr/.18;
+        const y=q.y+Math.sin(a)*size*.38*rr/.18;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle=`rgba(105,205,255,${.025+e*.025-layer*.003})`;ctx.lineWidth=.55;ctx.stroke();
+    }
+
+    // Core: deliberately abstract, no eye, no orb, no fixed geometry.
+    const coreR=size*(.055+e*.012);
+    const glow=ctx.createRadialGradient(q.x,q.y,0,q.x,q.y,coreR*4.5);
+    glow.addColorStop(0,`rgba(125,225,255,${.15+e*.12})`);glow.addColorStop(.25,`rgba(95,143,255,${.08+e*.06})`);glow.addColorStop(1,'transparent');
+    ctx.fillStyle=glow;ctx.fillRect(q.x-coreR*5,q.y-coreR*5,q.x?coreR*10:1,coreR*10);
+    for(let k=0;k<3;k++){
+      ctx.beginPath();
+      for(let i=0;i<=90;i++){
+        const a=i/90*6.283;
+        const wob=Math.sin(a*(4+k)+t*(.7+k*.2))*coreR*.22+Math.cos(a*7-t)*coreR*.1;
+        const rr=coreR*(.65+k*.18)+wob;
+        const x=q.x+Math.cos(a+t*(.03+k*.01))*rr;
+        const y=q.y+Math.sin(a-t*(.04+k*.015))*rr*.62;
+        if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      }
+      ctx.closePath();ctx.strokeStyle=`rgba(169,239,255,${.13+k*.035+e*.08})`;ctx.lineWidth=1.1-k*.2;ctx.stroke();
+    }
+    ctx.beginPath();ctx.arc(q.x+Math.sin(t*.8)*2,q.y+Math.cos(t*.65)*2,2.3+e*2.5,0,6.283);ctx.fillStyle='#e6fbff';ctx.shadowBlur=28;ctx.shadowColor='#72e8ff';ctx.fill();ctx.shadowBlur=0;
+
+    if(pointer.active){
+      const near=Math.max(0,1-Math.hypot(pointer.x-q.x,pointer.y-q.y)/(size*.5));
+      if(near>.02){ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(pointer.x,pointer.y);ctx.strokeStyle=`rgba(121,232,255,${near*.035})`;ctx.lineWidth=.7;ctx.stroke()}
+    }
     requestAnimationFrame(draw);t+=.012;
   }
   draw();
+
+  // Hide the legacy CSS orb geometry; canvas owns the presence now.
+  presence.classList.add('canvas-presence');
 
   function setState(next,line){state=next;presence.classList.toggle('active',next==='listening'||next==='acting');presence.classList.toggle('thinking',next==='thinking'||next==='learning');presenceText.textContent=next.toUpperCase();activityState.textContent=next.toUpperCase();activityLine.textContent=line||'Listening for you.';const copy={idle:["I'm here.",'quiet · aware · waiting'],listening:["I'm listening.",'with you · right now'],thinking:["Let me think.",'connecting what I know'],remembering:["I remember.",'looking through memory'],acting:["On it.",'working on your request'],learning:["I'm learning.",'feedback becomes experience'],error:["Something broke.",'recovering safely']}[next]||["I'm here.",''];headline.textContent=copy[0];subline.textContent=copy[1]}
   function addMessage(who,text){const el=document.createElement('div');el.className='message '+who;const name=document.createElement('span');name.className='message-name';name.textContent=who==='user'?'YOU':'WULAN';const p=document.createElement('p');p.textContent=text;el.append(name,p);messages.appendChild(el);messages.scrollTop=messages.scrollHeight}

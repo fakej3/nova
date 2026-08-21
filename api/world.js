@@ -2,6 +2,12 @@ import { WulanWorld, seedWulanWorld } from '../wulan/core/world.js';
 import { getRepoSnapshot } from '../wulan/tools/github.js';
 import { getSentinelHealth } from '../wulan/tools/sentinel.js';
 
+const PROVIDERS = [
+  ['provider:gemini', 'Google Gemini', 'gemini'],
+  ['provider:openai', 'OpenAI / ChatGPT', 'openai'],
+  ['provider:anthropic', 'Anthropic / Claude', 'anthropic'],
+];
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -9,6 +15,15 @@ export default async function handler(req, res) {
   }
 
   const world = seedWulanWorld(new WulanWorld());
+  for (const [id, name, providerId] of PROVIDERS) {
+    world.upsertEntity({ id, name, kind: 'ai-provider', status: 'gateway', metadata: { providerId } });
+    world.relate('wulan', id, 'can_route_to');
+  }
+  world.relate('leon', 'provider:anthropic', 'prefers');
+  world.relate('oracle', 'provider:openai', 'prefers');
+  world.relate('atlas', 'provider:gemini', 'prefers');
+  world.relate('pixel', 'provider:gemini', 'prefers');
+
   let github = null;
   let githubError = null;
   let sentinel = null;

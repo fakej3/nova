@@ -2,6 +2,7 @@ import { createWulanCore } from './index.js';
 import { WulanWorld, seedWulanWorld } from './world.js';
 import { WulanOrchestrator } from './orchestrator.js';
 import { registerGithubCapabilities } from '../tools/github.js';
+import { registerSentinelCapabilities } from '../tools/sentinel.js';
 
 export function createDefaultWulanCore(){
   const core = createWulanCore();
@@ -18,6 +19,7 @@ export function createDefaultWulanCore(){
 
   const world = seedWulanWorld(WulanWorld.load());
   registerGithubCapabilities(world);
+  registerSentinelCapabilities(world);
   const orchestrator = new WulanOrchestrator({ core, world });
 
   core.world = world;

@@ -3,14 +3,12 @@ const normalize=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\s_-]/g,' ').rep
 const keywords=text=>[...new Set(normalize(text).split(' ').filter(w=>w.length>2))].slice(0,24);
 
 export class WulanConsolidationEngine {
-  constructor({memory,learning,neural,maxPatterns=1000,storageKey='wulan-consolidation-v1'}={}){
-    this.memory=memory;this.learning=learning;this.neural=neural;this.maxPatterns=maxPatterns;this.storageKey=storageKey;
+  constructor({memory,learning,neural,persistence=null,maxPatterns=1000,storageKey='consolidation'}={}){
+    this.memory=memory;this.learning=learning;this.neural=neural;this.persistence=persistence;this.maxPatterns=maxPatterns;this.storageKey=storageKey;
     this.patterns=[];this.runs=0;this.load();
   }
 
-  outcomeScore(outcome){
-    return outcome==='accepted'?1:outcome==='corrected'?.65:outcome==='rejected'?-1:outcome==='failed'?-1:.15;
-  }
+  outcomeScore(outcome){ return outcome==='accepted'?1:outcome==='corrected'?.65:outcome==='rejected'?-1:outcome==='failed'?-1:.15; }
 
   consolidate({text,agent,outcome='accepted',correction=null,toolResult=null,confidence=.5,source='experience'}={}){
     if(!text)return null;
@@ -38,6 +36,6 @@ export class WulanConsolidationEngine {
 
   snapshot(){return{version:1,patterns:this.patterns,runs:this.runs,updatedAt:new Date().toISOString()};}
   stats(){const successful=this.patterns.filter(p=>p.score>0).length;return{patterns:this.patterns.length,runs:this.runs,positivePatterns:successful,negativePatterns:this.patterns.filter(p=>p.score<0).length};}
-  save(){try{localStorage.setItem(this.storageKey,JSON.stringify(this.snapshot()));}catch{}}
-  load(){try{const raw=localStorage.getItem(this.storageKey);if(!raw)return;const d=JSON.parse(raw);this.patterns=Array.isArray(d.patterns)?d.patterns.slice(-this.maxPatterns):[];this.runs=Number(d.runs)||0;}catch{}}
+  save(){try{this.persistence?.saveSync(this.storageKey,this.snapshot());}catch{}}
+  load(){try{const d=this.persistence?.loadSync(this.storageKey,null);if(!d)return;this.patterns=Array.isArray(d.patterns)?d.patterns.slice(-this.maxPatterns):[];this.runs=Number(d.runs)||0;}catch{}}
 }

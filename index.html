@@ -7,6 +7,7 @@
 <meta name="description" content="Wulan — personal operating environment">
 <title>WULAN — Personal Operating Environment</title>
 <link rel="stylesheet" href="css/nova2.css">
+<link rel="stylesheet" href="css/cinematic-world.css">
 </head>
 <body>
 <canvas id="nova-canvas" aria-hidden="true"></canvas>
@@ -19,7 +20,7 @@
   <section class="scene" aria-label="Wulan world">
     <div class="world-space" id="world-space" aria-hidden="true"></div>
     <div class="hello"><span id="eyebrow">WULAN</span><h1 id="headline">WULAN</h1><p id="subline">PERSONAL OPERATING ENVIRONMENT</p></div>
-    <div id="presence-core" class="presence-core" aria-label="Wulan"><div class="core-shadow"></div><div class="core-form"><span></span><span></span><span></span><span></span></div><div class="core-eye"><i></i></div></div>
+    <div id="presence-core" class="presence-core" aria-label="Wulan"><div class="core-shadow"></div><div class="core-form"><span></span><span></span><span></span><span></span><div class="core-eye"><i></i></div></div></div>
     <div class="ambient-label label-memory" id="memory-label">WORLD <b>0</b></div><div class="ambient-label label-agents" id="agents-label">AGENTS <b>0</b></div><div class="ambient-label label-context" id="context-label">CONTEXT <b>LOCAL</b></div>
   </section>
   <aside class="activity" id="activity" aria-live="polite" hidden><div class="activity-top"><span>WULAN</span><b id="activity-state"></b></div><div id="activity-line"></div></aside>
@@ -28,5 +29,6 @@
 </main>
 <script type="module" src="wulan-os.js"></script>
 <script type="module" src="wulan/world-runtime-v2.js"></script>
+<script type="module" src="wulan/cinematic-world.js"></script>
 </body>
 </html>

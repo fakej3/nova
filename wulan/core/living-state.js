@@ -22,13 +22,7 @@ export class WulanLivingState {
   }
 
   snapshot() {
-    return Object.freeze({
-      state: this.state,
-      attention: this.attention,
-      energy: this.energy,
-      focus: this.focus,
-      activity: this.activity
-    });
+    return Object.freeze({ state: this.state, attention: this.attention, energy: this.energy, focus: this.focus, activity: this.activity });
   }
 
   subscribe(listener) {
@@ -60,27 +54,17 @@ export class WulanLivingState {
 
   decayToIdle(delay = 1200) {
     clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      this.transition(LIVING_STATES.IDLE, {
-        attention: Math.max(0.12, this.attention * 0.45),
-        energy: Math.max(0.16, this.energy * 0.55),
-        activity: 'Listening for you.'
-      });
-    }, delay);
+    this.idleTimer = setTimeout(() => this.transition(LIVING_STATES.IDLE, { attention: Math.max(0.12, this.attention * 0.45), energy: Math.max(0.16, this.energy * 0.55), activity: 'Listening for you.' }), delay);
   }
 
   #notify() {
     const snapshot = this.snapshot();
-    for (const listener of this.listeners) {
-      try { listener(snapshot); } catch { /* UI listeners must not break the core. */ }
-    }
+    for (const listener of this.listeners) { try { listener(snapshot); } catch { /* UI listeners must not break the core. */ } }
   }
 }
 
 export class WulanLocalPersistence {
-  constructor(key = 'wulan-local-v1') {
-    this.key = key;
-  }
+  constructor(key = 'wulan-local-v1') { this.key = key; }
 
   save(core) {
     try {
@@ -90,9 +74,7 @@ export class WulanLocalPersistence {
       };
       localStorage.setItem(this.key, JSON.stringify(payload));
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }
 
   load(core) {
@@ -106,11 +88,13 @@ export class WulanLocalPersistence {
         try { core.remember(memory); memories += 1; } catch { /* skip malformed local data */ }
       }
       for (const record of Array.isArray(payload.learning) ? payload.learning : []) {
-        try { core.learning?.record(record); learning += 1; } catch { /* skip malformed local data */ }
+        try {
+          if (typeof core.recordFeedback === 'function') core.recordFeedback(record);
+          else core.learning?.record(record);
+          learning += 1;
+        } catch { /* skip malformed local data */ }
       }
       return { memories, learning };
-    } catch {
-      return { memories: 0, learning: 0 };
-    }
+    } catch { return { memories: 0, learning: 0 }; }
   }
 }

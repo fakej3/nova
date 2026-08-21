@@ -1,0 +1,1 @@
+Neural v2 is designed to make Wulan learn without pretending that the local network is a language model. It strengthens useful associations, weakens rejected routes, spreads activation across learned paths, decays stale state, and persists the resulting graph locally.

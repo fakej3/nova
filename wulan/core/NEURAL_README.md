@@ -1,0 +1,1 @@
+The neural layer is deliberately inspectable: memories and feedback create nodes and weighted relationships; queries spread activation through those relationships; feedback changes routing weights; time reduces stale activation; consolidation prunes weak evidence. It is a local learned associative layer, not an LLM replacement.

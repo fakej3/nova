@@ -4,9 +4,9 @@
 
 const ROUTES = [
   { test: /github|repo|repository|commit|branch|codebase/i, agent: 'leon', capability: 'github.repo.snapshot' },
-  { test: /sentinel|trade|trading|market/i, agent: 'oracle', entity: 'sentinel' },
+  { test: /sentinel|trade|trading|market/i, agent: 'oracle', capability: 'sentinel.health', entity: 'sentinel' },
   { test: /edgelab|research|experiment|strategy/i, agent: 'atlas', entity: 'edgelab' },
-  { test: /design|ui|visual|image|creative/i, agent: 'pixel' },
+  { test: /design|ui|visual|image|creative/i, agent: 'pixel', entity: 'wulan' },
 ];
 
 export class WulanOrchestrator {

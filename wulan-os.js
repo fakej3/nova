@@ -24,11 +24,15 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
       const run=await runAgent(text);
       if(run.requiresApproval){addMessage('wulan','I found an action that needs your approval before I run it.',`approval · ${run.plan?.steps?.length??0} step(s)`);return;}
       addMessage('wulan',run.answer||localReply(text),run.plan?.steps?.length?run.plan.steps.map(s=>s.capabilityId).join(' · '):'no external action');
-      core.recordFeedback({outcome:'accepted',context:text,candidatePreference:prediction.agent,source:'conversation',confidence:prediction.confidence});
-      consolidation.consolidate({text,agent:prediction.agent,outcome:'accepted',confidence:prediction.confidence,toolResult:run.result,source:'conversation'});
+      const outcome=run.learning?.outcome==='accepted'?'accepted':run.learning?.outcome==='rejected'?'rejected':run.verification?.outcome==='verified'?'accepted':run.verification?.outcome==='failed'?'rejected':'inconclusive';
+      if(outcome!=='inconclusive'){
+        const confidence=Number(run.learning?.confidence??run.verification?.confidence??prediction.confidence??.3);
+        core.recordFeedback({outcome,context:text,candidatePreference:prediction.agent,source:'verified-agent-run',confidence});
+        consolidation.consolidate({text,agent:prediction.agent,outcome,confidence,toolResult:run.results,source:'verified-agent-run'});
+      }
       if(prior.length) core.remember({content:`Prior learned context considered: ${prior.map(p=>p.keywords.slice(0,5).join(', ')).join(' | ')}`,type:'knowledge',source:'learning-retrieval',importance:.25,tags:['learning-context']});
     }catch(error){
-      addMessage('wulan',localReply(text),`fallback · ${error.message}`);
+      addMessage('wulan',localReply(text),'fallback');
       core.recordFeedback({outcome:'rejected',context:text,correction:'agent execution failed',candidatePreference:prediction.agent,source:'system',confidence:.3});
       consolidation.consolidate({text,agent:prediction.agent,outcome:'failed',correction:error.message,confidence:.3,source:'execution-failure'});
     }

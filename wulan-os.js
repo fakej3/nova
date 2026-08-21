@@ -125,8 +125,6 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
           { providerId: agent?.providerId },
         );
       } catch (error) {
-        // If the specialist's provider is simply unconfigured, let the gateway
-        // try the next configured provider instead of dropping straight to local mode.
         if (error?.status === 503 && agent?.providerId) {
           try {
             reply = await core.ai.generate({ messages: [{ role: 'user', content: text }], system: buildSystem(route, toolResult ?? toolError) });
@@ -203,3 +201,8 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
   tick();
   setInterval(tick, 1000);
 })();
+
+// The activity layer is intentionally loaded from the existing shell entrypoint
+// so the world can remain the single visual surface while activity stays a
+// separate, replaceable projection.
+import './wulan/live-activity.js';

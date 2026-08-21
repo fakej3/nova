@@ -1,6 +1,7 @@
 // Wulan Orchestrator — turns intent into work across agents and real capabilities.
-// It is deliberately model-agnostic. A model can propose a plan later; this layer
-// owns execution, permissions, activity and world state.
+// Model-agnostic execution layer. Planning may be model-assisted, but execution
+// and verification remain owned by Wulan's core.
+import { verifyCapabilityResult } from './verification.js';
 
 const ROUTES = [
   { test: /github|repo|repository|commit|branch|codebase/i, agent: 'leon', capability: 'github.repo.snapshot' },
@@ -10,10 +11,7 @@ const ROUTES = [
 ];
 
 export class WulanOrchestrator {
-  constructor({ core, world }) {
-    this.core = core;
-    this.world = world;
-  }
+  constructor({ core, world }) { this.core = core; this.world = world; }
 
   classify(text) {
     const route = ROUTES.find(candidate => candidate.test.test(text));
@@ -29,7 +27,10 @@ export class WulanOrchestrator {
     try {
       let result = { route, status: 'planned' };
       if (route.capability) {
-        result = { ...result, status: 'executing', result: await this.world.invoke(route.capability, context.input ?? {}, { agentId: route.agent, text }) };
+        const capability = this.world.capabilities.get(route.capability);
+        const raw = await this.world.invoke(route.capability, context.input ?? {}, { agentId: route.agent, text });
+        const verification = verifyCapabilityResult({ capability, result: raw, expected: context.expectedResult ?? null });
+        result = { ...result, status: 'completed', result: raw, verification };
       }
       if (route.entity) {
         const entity = this.world.entities.get(route.entity);

@@ -5,7 +5,7 @@ import { WulanLearningStore } from './learning.js';
 import { WulanAIGateway } from './ai-gateway.js';
 import { WulanPersistence, WulanMemoryPersistenceAdapter } from './persistence.js';
 
-export function createWulanCore({persistence=null}={}){
+export function createWulanCore({persistence=null,world=null}={}){
   const events=new WulanEventBus();
   const capabilities=new CapabilityRegistry();
   const canonicalPersistence=persistence??new WulanPersistence({adapter:new WulanMemoryPersistenceAdapter(),namespace:'wulan'});
@@ -13,7 +13,8 @@ export function createWulanCore({persistence=null}={}){
   const learning=new WulanLearningStore({persistence:canonicalPersistence,storageKey:'learning'});
   const ai=new WulanAIGateway();
   const state={status:'booting',agents:new Map(),integrations:new Map()};
-  const core={events,capabilities,memory,learning,ai,persistence:canonicalPersistence,state,
+  const core={events,capabilities,memory,learning,ai,persistence:canonicalPersistence,state,world,
+    attachWorld(nextWorld){if(!nextWorld?.attachEventBus)throw new TypeError('World must support attachEventBus');if(core.world?.detachEventBus)core.world.detachEventBus(events);core.world=nextWorld;nextWorld.attachEventBus(events);return nextWorld;},
     registerAgent(agent){if(!agent?.id||!agent?.name)throw new TypeError('Agent requires id and name');if(state.agents.has(agent.id))throw new Error(`Agent already registered: ${agent.id}`);state.agents.set(agent.id,{status:'idle',...agent});return state.agents.get(agent.id);},
     registerIntegration(integration){if(!integration?.id||!integration?.name)throw new TypeError('Integration requires id and name');if(state.integrations.has(integration.id))throw new Error(`Integration already registered: ${integration.id}`);state.integrations.set(integration.id,{status:'disconnected',...integration});return state.integrations.get(integration.id);},
     startAgent(agentId,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);if(agent.status==='active')return agent;agent.status='active';events.emit(WULAN_EVENTS.AGENT_STARTED,{agentId,...meta});return agent;},
@@ -25,5 +26,6 @@ export function createWulanCore({persistence=null}={}){
     searchMemory(query,options={}){const results=memory.search(query,options);events.emit(WULAN_EVENTS.MEMORY_RETRIEVED,{query,count:results.length});return results;},
     boot(){if(state.status==='ready')return state;state.status='ready';events.emit(WULAN_EVENTS.SYSTEM_READY,{agents:[...state.agents.keys()],integrations:[...state.integrations.keys()]});return state;}
   };
+  if(world) core.attachWorld(world);
   return core;
 }

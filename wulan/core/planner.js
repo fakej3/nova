@@ -19,5 +19,5 @@ export function validatePlan(plan,world){
    const capability=world.capabilities.get(step.capabilityId),input=step.input&&typeof step.input==='object'&&!Array.isArray(step.input)?step.input:{};
    const validation=world.capabilities.validateInput(capability,input);if(!validation.ok)throw new Error(`INVALID_CAPABILITY_INPUT:${validation.error}`);
    return{capabilityId:step.capabilityId,input:validation.value,reason:String(step.reason??'').slice(0,300),expectedResult:String(step.expectedResult??'').slice(0,300)};
- });};
+ })};
 }

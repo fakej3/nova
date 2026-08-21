@@ -3,34 +3,60 @@ import { WulanWorld, seedWulanWorld } from './world.js';
 import { WulanOrchestrator } from './orchestrator.js';
 import { registerGithubCapabilities } from '../tools/github.js';
 import { registerSentinelCapabilities } from '../tools/sentinel.js';
-
-async function serverGenerate(request) {
-  const response = await fetch('/api/ai', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ messages: request.messages ?? [], system: request.system ?? '' }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `AI_${response.status}`);
-  return data.text;
-}
+import { createRemoteProvider } from '../../services/ai-gateway-client.js';
 
 export function createDefaultWulanCore(){
   const core = createWulanCore();
 
-  core.registerAgent({ id:'atlas', name:'ATLAS', role:'research' });
-  core.registerAgent({ id:'leon', name:'LEON', role:'engineering' });
-  core.registerAgent({ id:'oracle', name:'ORACLE', role:'analysis' });
-  core.registerAgent({ id:'pixel', name:'PIXEL', role:'creative' });
+  // Specialist agents are roles. Models are providers underneath them.
+  // This keeps the world stable when we swap models later.
+  core.registerAgent({ id:'atlas', name:'ATLAS', role:'research', providerId:'gemini' });
+  core.registerAgent({ id:'leon', name:'LEON', role:'engineering', providerId:'anthropic' });
+  core.registerAgent({ id:'oracle', name:'ORACLE', role:'analysis', providerId:'openai' });
+  core.registerAgent({ id:'pixel', name:'PIXEL', role:'creative', providerId:'gemini' });
 
   core.registerIntegration({ id:'sentinel', name:'Sentinel', kind:'trading' });
   core.registerIntegration({ id:'edgelab', name:'EdgeLab', kind:'research' });
   core.registerIntegration({ id:'github', name:'GitHub', kind:'development' });
   core.registerIntegration({ id:'vercel', name:'Vercel', kind:'deployment' });
 
-  core.ai.registerProvider({ id:'wulan-server', name:'Wulan Server AI', generate:serverGenerate, capabilities:['chat'] });
+  core.ai.registerProvider({
+    ...createRemoteProvider({
+      id:'gemini',
+      name:'Google Gemini',
+      capabilities:['chat','vision','reasoning','tools'],
+      priority:10,
+    }),
+  });
+  core.ai.registerProvider({
+    ...createRemoteProvider({
+      id:'openai',
+      name:'OpenAI / ChatGPT',
+      capabilities:['chat','reasoning','tools'],
+      priority:20,
+    }),
+  });
+  core.ai.registerProvider({
+    ...createRemoteProvider({
+      id:'anthropic',
+      name:'Anthropic / Claude',
+      capabilities:['chat','reasoning','coding','tools'],
+      priority:30,
+    }),
+  });
 
   const world = seedWulanWorld(WulanWorld.load());
+  for (const provider of core.ai.listProviders()) {
+    world.upsertEntity({
+      id: `provider:${provider.id}`,
+      name: provider.name,
+      kind: 'ai-provider',
+      status: 'available-via-gateway',
+      metadata: { providerId: provider.id, capabilities: provider.capabilities },
+    });
+    world.relate('wulan', `provider:${provider.id}`, 'can_route_to');
+  }
+
   registerGithubCapabilities(world);
   registerSentinelCapabilities(world);
   const orchestrator = new WulanOrchestrator({ core, world });

@@ -18,8 +18,6 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
   const subline = $('#subline');
   const presenceText = $('#presence-text');
 
-  // The interface does not narrate internal states. State is visible through
-  // the world graph and conversation itself.
   if (headline) headline.textContent = 'WULAN';
   if (subline) subline.textContent = 'PERSONAL OPERATING ENVIRONMENT';
   if (presenceText) presenceText.textContent = 'ONLINE';
@@ -32,9 +30,16 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
     if (memoryLabel) memoryLabel.innerHTML = `WORLD <b>${core.world?.entities.size ?? 0}</b>`;
     if (agentsLabel) agentsLabel.innerHTML = `AGENTS <b>${core.state.agents.size}</b>`;
     if (memoryHint) memoryHint.textContent = `memory · ${memoryCount()} stored`;
-    if (providerHint) {
-      providerHint.textContent = `AI gateway · ${core.ai.listProviders().length} providers`;
-    }
+    if (providerHint) providerHint.textContent = `AI gateway · ${core.ai.listProviders().length} providers`;
+  }
+
+  async function syncProviderStatus() {
+    try {
+      const response = await fetch('/api/ai', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const data = await response.json();
+      const configured = (data.providers ?? []).filter(provider => provider.configured).length;
+      if (providerHint) providerHint.textContent = `AI gateway · ${configured}/${data.providers?.length ?? 0} configured`;
+    } catch {}
   }
 
   function save() {
@@ -61,22 +66,16 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
   }
 
   function remember(text) {
-    core.remember({
-      content: text,
-      type: 'experience',
-      source: 'conversation',
-      importance: .35,
-      tags: ['conversation', 'session'],
-    });
+    core.remember({ content: text, type: 'experience', source: 'conversation', importance: .35, tags: ['conversation', 'session'] });
     syncLabels();
   }
 
   function localReply(text) {
     const s = text.toLowerCase();
-    if (/hello|hi|hey|bro/.test(s)) return "Hey. Wulan is online. What are we building?";
-    if (/who are you|what are you/.test(s)) return "Wulan is the operating layer: memory, agents, tools, projects and model providers connected through one core.";
+    if (/hello|hi|hey|bro/.test(s)) return 'Hey. Wulan is online. What are we building?';
+    if (/who are you|what are you/.test(s)) return 'Wulan is the operating layer: memory, agents, tools, projects and model providers connected through one core.';
     if (/memory/.test(s)) return `I have ${memoryCount()} local memories. The world model is also stored on this device.`;
-    return "The local core is online, but the requested model provider is not configured on this deployment yet.";
+    return 'The local core is online, but no configured model could answer this request.';
   }
 
   function buildSystem(route, toolResult) {
@@ -86,7 +85,7 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
       'You are Wulan, a private personal operating environment.',
       'Do not describe yourself as listening, thinking, waiting, or being alive. Do not narrate internal UI states.',
       'Never claim a tool action happened unless the supplied tool result proves it.',
-      `You are routing this request through specialist agent ${agent?.name ?? route.agent} (${agent?.role ?? 'general'}).`,
+      `Route this request through specialist agent ${agent?.name ?? route.agent} (${agent?.role ?? 'general'}).`,
       `Preferred model provider: ${agent?.providerId ?? 'gateway'}.`,
       toolResult ? `Live tool result: ${JSON.stringify(toolResult).slice(0, 12000)}` : 'No external tool was invoked for this request.',
       world ? `World entities currently known: ${world.entities.map(e => `${e.name}:${e.status}`).join(', ')}` : '',
@@ -104,7 +103,7 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
     const route = core.orchestrator.classify(text);
     const agent = core.state.agents.get(route.agent);
     core.world?.observe('user', { type: 'task.started', text, agentId: route.agent, providerId: agent?.providerId ?? null });
-    if (agent) core.startAgent(route.agent, { reason: 'user_request' });
+    if (agent && !route.capability) core.startAgent(route.agent, { reason: 'user_request' });
 
     let toolResult = null;
     let toolError = null;
@@ -126,22 +125,28 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
           { providerId: agent?.providerId },
         );
       } catch (error) {
-        reply = localReply(text);
+        // If the specialist's provider is simply unconfigured, let the gateway
+        // try the next configured provider instead of dropping straight to local mode.
+        if (error?.status === 503 && agent?.providerId) {
+          try {
+            reply = await core.ai.generate({ messages: [{ role: 'user', content: text }], system: buildSystem(route, toolResult ?? toolError) });
+          } catch {
+            reply = localReply(text);
+          }
+        } else {
+          reply = localReply(text);
+        }
       }
 
       const shown = typeof reply === 'string' ? reply : (reply?.text || reply?.content || localReply(text));
-      addMessage('wulan', shown, `${agent?.name ?? 'WULAN'} · ${agent?.providerId ?? 'local'}${route.capability ? ` · ${route.capability}` : ''}`);
+      addMessage('wulan', shown, `${agent?.name ?? 'WULAN'} · ${agent?.providerId ?? 'gateway'}${route.capability ? ` · ${route.capability}` : ''}`);
       core.recordFeedback({ outcome: 'accepted', context: text, candidatePreference: null, source: 'conversation', confidence: .35 });
       core.world?.observe('wulan', {
-        type: 'task.completed',
-        text,
-        agentId: route.agent,
-        providerId: agent?.providerId ?? null,
-        capability: route.capability ?? null,
-        success: !toolError,
+        type: 'task.completed', text, agentId: route.agent, providerId: agent?.providerId ?? null,
+        capability: route.capability ?? null, success: !toolError,
       });
     } finally {
-      if (agent) core.finishAgent(route.agent, { reason: 'user_request_complete' });
+      if (agent && !route.capability) core.finishAgent(route.agent, { reason: 'user_request_complete' });
       core.world?.save();
       save();
       syncLabels();
@@ -184,14 +189,13 @@ import { WulanLocalPersistence } from './wulan/core/living-state.js';
   });
 
   core.world?.subscribe(event => {
-    if (event.event === 'capability.started' || event.event === 'capability.completed' || event.event === 'capability.failed') {
-      syncLabels();
-    }
+    if (event.event === 'capability.started' || event.event === 'capability.completed' || event.event === 'capability.failed') syncLabels();
   });
 
   core.events.on(WULAN_EVENTS.SYSTEM_READY, syncLabels);
   persistence.load(core);
   syncLabels();
+  syncProviderStatus();
   setInterval(save, 15000);
 
   const clock = $('#clock');

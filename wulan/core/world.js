@@ -2,19 +2,19 @@
 // The world is the substrate underneath the interface: entities, relations,
 // capabilities and live observations. UI should render this state, not invent it.
 
-const STORAGE_KEY = 'wulan_world_v1';
-
 function now() { return new Date().toISOString(); }
 function id(prefix) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 
 export class WulanWorld {
-  constructor(seed = {}) {
+  constructor(seed = {}, { persistence = null, storageKey = 'world' } = {}) {
     this.entities = new Map();
     this.relations = new Map();
     this.capabilities = new Map();
     this.observations = [];
     this.activities = [];
     this.hooks = new Set();
+    this.persistence = persistence;
+    this.storageKey = storageKey;
     this.hydrate(seed);
   }
 
@@ -27,12 +27,17 @@ export class WulanWorld {
     return this;
   }
 
-  subscribe(fn) { this.hooks.add(fn); return () => this.hooks.delete(fn); }
+  subscribe(fn) { if (typeof fn !== 'function') return () => {}; this.hooks.add(fn); return () => this.hooks.delete(fn); }
+
+  attachEventBus(eventBus) {
+    if (!eventBus?.emit) throw new TypeError('World requires an event bus with emit()');
+    return this.subscribe(({ event, payload }) => eventBus.emit(`world.${event}`, payload, { source: 'wulan-world' }));
+  }
 
   emit(event, payload) {
-    for (const hook of this.hooks) {
-      try { hook({ event, payload, at: now() }); } catch {}
-    }
+    const entry = { event, payload, at: now() };
+    for (const hook of this.hooks) { try { hook(entry); } catch {} }
+    return entry;
   }
 
   upsertEntity(entity) {
@@ -104,41 +109,43 @@ export class WulanWorld {
     };
   }
 
-  save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.snapshot())); } catch {}
+  async save() {
+    if (this.persistence?.save) {
+      await this.persistence.save(this.storageKey, this.snapshot());
+      this.emit('persistence.saved', { storageKey: this.storageKey });
+      return true;
+    }
+    return false;
   }
 
-  static load(seed = {}) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return new WulanWorld({ ...seed, ...JSON.parse(raw) });
-    } catch {}
-    return new WulanWorld(seed);
+  async loadPersisted() {
+    if (!this.persistence?.load) return false;
+    const snapshot = await this.persistence.load(this.storageKey, null);
+    if (!snapshot) return false;
+    this.hydrate(snapshot);
+    this.emit('world.hydrated', { storageKey: this.storageKey });
+    return true;
+  }
+
+  static load(seed = {}, options = {}) {
+    return new WulanWorld(seed, options);
   }
 }
 
 export function seedWulanWorld(world) {
   const entities = [
-    ['wulan', 'Wulan', 'system', 'online'],
-    ['sentinel', 'Sentinel', 'project', 'registered'],
-    ['edgelab', 'EdgeLab', 'project', 'registered'],
-    ['github', 'GitHub', 'integration', 'ready'],
-    ['vercel', 'Vercel', 'integration', 'ready'],
-    ['memory', 'Memory', 'system', 'ready'],
-    ['context', 'Context', 'system', 'ready'],
-    ['atlas', 'Atlas', 'agent', 'idle'],
-    ['leon', 'Leon', 'agent', 'idle'],
-    ['oracle', 'Oracle', 'agent', 'idle'],
-    ['pixel', 'Pixel', 'agent', 'idle'],
+    ['wulan', 'Wulan', 'system', 'online'], ['sentinel', 'Sentinel', 'project', 'registered'],
+    ['edgelab', 'EdgeLab', 'project', 'registered'], ['github', 'GitHub', 'integration', 'ready'],
+    ['vercel', 'Vercel', 'integration', 'ready'], ['memory', 'Memory', 'system', 'ready'],
+    ['context', 'Context', 'system', 'ready'], ['atlas', 'Atlas', 'agent', 'idle'],
+    ['leon', 'Leon', 'agent', 'idle'], ['oracle', 'Oracle', 'agent', 'idle'], ['pixel', 'Pixel', 'agent', 'idle'],
   ];
-  for (const [id, name, kind, status] of entities) world.upsertEntity({ id, name, kind, status });
+  for (const [entityId, name, kind, status] of entities) world.upsertEntity({ id: entityId, name, kind, status });
   const relations = [
-    ['wulan', 'memory', 'uses'], ['wulan', 'context', 'uses'],
-    ['wulan', 'atlas', 'orchestrates'], ['wulan', 'leon', 'orchestrates'],
-    ['wulan', 'oracle', 'orchestrates'], ['wulan', 'pixel', 'orchestrates'],
-    ['wulan', 'sentinel', 'controls'], ['wulan', 'edgelab', 'controls'],
-    ['wulan', 'github', 'connected_to'], ['wulan', 'vercel', 'connected_to'],
-    ['leon', 'github', 'uses'], ['atlas', 'edgelab', 'uses'],
+    ['wulan', 'memory', 'uses'], ['wulan', 'context', 'uses'], ['wulan', 'atlas', 'orchestrates'],
+    ['wulan', 'leon', 'orchestrates'], ['wulan', 'oracle', 'orchestrates'], ['wulan', 'pixel', 'orchestrates'],
+    ['wulan', 'sentinel', 'controls'], ['wulan', 'edgelab', 'controls'], ['wulan', 'github', 'connected_to'],
+    ['wulan', 'vercel', 'connected_to'], ['leon', 'github', 'uses'], ['atlas', 'edgelab', 'uses'],
   ];
   const existingPairs = new Set([...world.relations.values()].map(r => `${r.from}:${r.to}:${r.type}`));
   for (const [from, to, type] of relations) if (!existingPairs.has(`${from}:${to}:${type}`)) world.relate(from, to, type);

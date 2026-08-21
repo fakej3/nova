@@ -1,6 +1,7 @@
 import { createDefaultWulanCore } from '../wulan/core/manifest.js';
 import { buildPlanPrompt, parsePlan, validatePlan } from '../wulan/core/planner.js';
 import { generateGemini } from '../services/server-ai.js';
+import { verifyCapabilityResult, summarizeVerification } from '../wulan/core/verification.js';
 
 function errorResponse(res,status,error,details=null){return res.status(status).json({ok:false,error,details});}
 
@@ -11,7 +12,8 @@ async function executePlan(core, plan, correlationId) {
     if (!capability) throw new Error(`CAPABILITY_NOT_ALLOWED:${step.capabilityId}`);
     if (capability.risk==='write'||capability.risk==='destructive') throw new Error(`WRITE_CAPABILITY_BLOCKED:${step.capabilityId}`);
     const result=await core.world.invoke(step.capabilityId,step.input,{correlationId,source:'agent-loop'});
-    results.push({capabilityId:step.capabilityId,result});
+    const verification=verifyCapabilityResult({capability,result,expected:step.expectedResult});
+    results.push({capabilityId:step.capabilityId,result,verification});
   }
   return results;
 }
@@ -29,23 +31,23 @@ export default async function handler(req,res){
     try{
       const planning=await generateGemini({system:buildPlanPrompt(text,core.world),messages:[{role:'user',content:text}],maxOutputTokens:700});
       plan=validatePlan(parsePlan(planning.text),core.world);
-    }catch(plannerError){
-      // Deterministic routing remains the safe fallback when Gemini is unavailable
-      // or returns malformed output.
+    }catch{
       const route=core.orchestrator.classify(text);
       plan=validatePlan({goal:text,needsUserApproval:false,steps:route.capability?[{capabilityId:route.capability,input:body.input||{},reason:'deterministic fallback'}]:[]},core.world);
     }
     if(plan.needsUserApproval)return res.status(200).json({ok:true,requiresApproval:true,correlationId,plan,results:[],activities:core.world.activities.slice(-20)});
     const results=await executePlan(core,plan,correlationId);
-    const evidence=results.map(r=>`${r.capabilityId}: ${JSON.stringify(r.result)}`).join('\n');
+    const verification=summarizeVerification(results);
+    const evidence=results.map(r=>`${r.capabilityId}: ${JSON.stringify(r.result)}\nVerification: ${JSON.stringify(r.verification)}`).join('\n');
     let answer;
     try{
-      const synthesis=await generateGemini({system:'You are Wulan. Answer naturally using only the supplied live evidence. Do not claim actions that are not in the evidence. Do not mention internal planning unless useful.',messages:[{role:'user',content:`Task: ${text}\n\nLive evidence:\n${evidence}`}],maxOutputTokens:900});
+      const synthesis=await generateGemini({system:'You are Wulan. Answer naturally using only supplied live evidence and verification. Never call an execution merely because it returned; distinguish verified, failed and inconclusive results. Do not claim a problem was solved unless verification supports it.',messages:[{role:'user',content:`Task: ${text}\n\nLive evidence:\n${evidence}`}],maxOutputTokens:900});
       answer=synthesis.text;
-    }catch{answer=results.length?`I checked it. ${results.map(r=>`${r.capabilityId} completed successfully.`).join(' ')}`:'I could not identify a safe action for that request yet.';}
-    core.world.observe('agent-loop',{type:'run.completed',correlationId,stepCount:plan.steps.length,success:true});
-    core.remember({type:'experience',content:`Task: ${text}\nPlan: ${plan.steps.map(s=>s.capabilityId).join(', ')||'none'}\nOutcome: completed`,source:'agent-loop',importance:.3,confidence:.7,tags:['agent-run','tool-use']});
-    return res.status(200).json({ok:true,correlationId,plan,results,answer,activities:core.world.activities.slice(-20),observations:core.world.observations.slice(-20)});
+    }catch{answer=results.length?`I checked it. Verification: ${verification.outcome}.`:'I could not identify a safe action for that request yet.';}
+    const learningOutcome=verification.outcome==='verified'?'accepted':verification.outcome==='failed'?'rejected':'inconclusive';
+    core.world.observe('agent-loop',{type:'run.completed',correlationId,stepCount:plan.steps.length,success:verification.outcome==='verified',verification});
+    if(learningOutcome!=='inconclusive') core.remember({type:'experience',content:`Task: ${text}\nPlan: ${plan.steps.map(s=>s.capabilityId).join(', ')||'none'}\nVerification: ${verification.outcome}`,source:'agent-loop',importance:.3,confidence:verification.confidence,tags:['agent-run','tool-use',verification.outcome]});
+    return res.status(200).json({ok:true,correlationId,plan,results,verification,learning:{outcome:learningOutcome,confidence:verification.confidence},answer,activities:core.world.activities.slice(-20),observations:core.world.observations.slice(-20)});
   }catch(error){
     core.world.observe('agent-loop',{type:'run.failed',correlationId,error:error instanceof Error?error.message:String(error)});
     return errorResponse(res,502,'AGENT_RUN_FAILED',error instanceof Error?error.message:String(error));

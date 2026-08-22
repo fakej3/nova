@@ -15,88 +15,38 @@ export function createDefaultWulanCore(){
   core.registerIntegration({id:'edgelab',name:'EdgeLab',kind:'research'});
   core.registerIntegration({id:'github',name:'GitHub',kind:'development'});
 
-  core.capabilities.register({
-    id:'memory.search',name:'Memory Search',version:'1.0',risk:'read',description:'Search Wulan memory using lexical and semantic retrieval.',permissions:['memory:read'],
-    inputSchema:{type:'object',required:['query'],properties:{query:{type:'string'},limit:{type:'number'}}},
-    execute:async({query,limit=8}={})=>{
-      if(!String(query??'').trim()) return {lexical:[],semantic:[]};
-      const lexical=core.searchMemory(String(query),{limit});
-      let semantic=[];
-      try{if(core.ai.status?.().configured) semantic=await core.searchSemanticMemory(String(query),{limit});}catch{}
-      return {lexical,semantic};
-    }
-  });
+  core.capabilities.register({id:'memory.search',name:'Memory Search',version:'1.0',risk:'read',description:'Search Wulan memory using lexical and semantic retrieval.',permissions:['memory:read'],inputSchema:{type:'object',required:['query'],properties:{query:{type:'string'},limit:{type:'number'}}},execute:async({query,limit=8}={})=>{if(!String(query??'').trim())return {lexical:[],semantic:[]};const lexical=core.searchMemory(String(query),{limit});let semantic=[];try{if(core.ai.status?.().configured)semantic=await core.searchSemanticMemory(String(query),{limit});}catch{}return {lexical,semantic};}});
+
+  core.capabilities.register({id:'memory.remember',name:'Remember',version:'1.0',risk:'write',description:'Store an explicit durable memory.',permissions:['memory:write'],inputSchema:{type:'object',required:['content'],properties:{content:{type:'string'},type:{type:'string'},importance:{type:'number'},tags:{type:'array'}}},execute:async({content,type='fact',importance=.7,tags=[]}={})=>{if(!String(content??'').trim())throw new Error('Memory content is required');return core.remember({content,type,importance,tags,source:'capability'});}});
+
+  core.capabilities.register({id:'system.status',name:'System Status',version:'1.0',risk:'read',description:'Inspect Wulan runtime, agents, integrations and neural state.',permissions:['system:read'],execute:async()=>({status:core.state.status,agents:[...core.state.agents.values()].map(({id,name,role,status})=>({id,name,role,status})),integrations:[...core.state.integrations.values()].map(({id,name,kind,status})=>({id,name,kind,status})),capabilities:core.capabilities.list(),neural:core.neural.stats(),semantic:core.semantic.stats()})});
 
   core.capabilities.register({
-    id:'memory.remember',name:'Remember',version:'1.0',risk:'write',description:'Store an explicit durable memory.',permissions:['memory:write'],
-    inputSchema:{type:'object',required:['content'],properties:{content:{type:'string'},type:{type:'string'},importance:{type:'number'},tags:{type:'array'}}},
-    execute:async({content,type='fact',importance=.7,tags=[]}={})=>{
-      if(!String(content??'').trim()) throw new Error('Memory content is required');
-      return core.remember({content,type,importance,tags,source:'capability'});
-    }
-  });
-
-  core.capabilities.register({
-    id:'system.status',name:'System Status',version:'1.0',risk:'read',description:'Inspect Wulan runtime, agents, integrations and neural state.',permissions:['system:read'],
-    execute:async()=>({
-      status:core.state.status,
-      agents:[...core.state.agents.values()].map(({id,name,role,status})=>({id,name,role,status})),
-      integrations:[...core.state.integrations.values()].map(({id,name,kind,status})=>({id,name,kind,status})),
-      capabilities:core.capabilities.list(),
-      neural:core.neural.stats(),
-      semantic:core.semantic.stats()
-    })
+    id:'github.inspect',name:'GitHub Inspect',version:'1.0',risk:'read',description:'Read public GitHub repository metadata, directories, or files through the server-side GitHub gateway.',permissions:['github:read'],
+    inputSchema:{type:'object',required:['owner','repo'],properties:{owner:{type:'string'},repo:{type:'string'},path:{type:'string'},ref:{type:'string'}}},
+    execute:async({owner='fakej3',repo='nova',path='',ref='master'}={})=>{
+      const params=new URLSearchParams({owner,repo,path,ref});
+      const response=await fetch(`/api/github?${params.toString()}`,{headers:{Accept:'application/json'},cache:'no-store'});
+      const data=await response.json();
+      if(!response.ok)throw new Error(data?.error||`GitHub HTTP ${response.status}`);
+      return data;
+    },
+    verify:async(result)=>Boolean(result&&result.type&&result.owner&&result.repo)
   });
 
   const seedBaseNeuralTopology=()=>{
     core.neural.ensureNeuron({id:'system:wulan-core',label:'WULAN CORE',type:'system',strength:.7,tags:['system','routing','core']});
-    for(const agent of core.state.agents.values()){
-      const id=`agent:${agent.id}`;
-      core.neural.ensureNeuron({id,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});
-      core.neural.connect('system:wulan-core',id,.28,1);
-      core.neural.connect(id,'system:wulan-core',.2,1);
-    }
+    for(const agent of core.state.agents.values()){const id=`agent:${agent.id}`;core.neural.ensureNeuron({id,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});core.neural.connect('system:wulan-core',id,.28,1);core.neural.connect(id,'system:wulan-core',.2,1);}
   };
   seedBaseNeuralTopology();
-
   core.boot();
 
   if(typeof window!=='undefined'){
-    if(!document.querySelector('.presence-core')){
-      const anchor=document.createElement('div');
-      anchor.className='presence-core';
-      anchor.setAttribute('aria-hidden','true');
-      anchor.style.display='none';
-      document.body?.appendChild(anchor);
-    }
-
-    try {
-      const persistenceKey='wulan-local-v2';
-      const raw=localStorage.getItem(persistenceKey);
-      if(raw){
-        const payload=JSON.parse(raw);
-        if(Array.isArray(payload.memories)) for(const memory of payload.memories) core.remember(memory);
-        if(Array.isArray(payload.learning)) for(const record of payload.learning) core.recordFeedback(record);
-        if(payload.neural?.version>=3) core.neural.importState(payload.neural);
-        if(payload.semantic && typeof core.semantic?.importState==='function') core.semantic.importState(payload.semantic);
-        seedBaseNeuralTopology();
-      }
-    } catch(error) { console.warn('[Wulan] local state restore skipped',error); }
-
+    if(!document.querySelector('.presence-core')){const anchor=document.createElement('div');anchor.className='presence-core';anchor.setAttribute('aria-hidden','true');anchor.style.display='none';document.body?.appendChild(anchor);}
+    try{const persistenceKey='wulan-local-v2';const raw=localStorage.getItem(persistenceKey);if(raw){const payload=JSON.parse(raw);if(Array.isArray(payload.memories))for(const memory of payload.memories)core.remember(memory);if(Array.isArray(payload.learning))for(const record of payload.learning)core.recordFeedback(record);if(payload.neural?.version>=3)core.neural.importState(payload.neural);if(payload.semantic&&typeof core.semantic?.importState==='function')core.semantic.importState(payload.semantic);seedBaseNeuralTopology();}}catch(error){console.warn('[Wulan] local state restore skipped',error);}
     window.WULAN_CORE=core;
-    fetch('/api/gemini',{headers:{Accept:'application/json'},cache:'no-store'})
-      .then(r=>r.ok?r.json():Promise.reject(new Error(`HTTP ${r.status}`)))
-      .then(health=>{
-        const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');
-        if(health?.configured){if(state)state.textContent='READY';if(hint)hint.textContent='AI GATEWAY · GEMINI READY';}
-        else{if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';}
-      })
-      .catch(error=>{console.warn('[Wulan] Gemini health check failed',error);const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';});
-
-    import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
-    import('../../ui/neural-field.js').then(()=>import('../../ui/neural-field-v4.js')).catch(error=>console.error('[Wulan] neural field failed to load',error));
-    import('../../ui/chat-runtime.js').catch(error=>console.error('[Wulan] chat runtime failed to load',error));
-    import('../../ui/cognitive-chat.js').catch(error=>console.error('[Wulan] cognitive chat failed to load',error));
+    fetch('/api/gemini',{headers:{Accept:'application/json'},cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject(new Error(`HTTP ${r.status}`))).then(health=>{const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(health?.configured){if(state)state.textContent='READY';if(hint)hint.textContent='AI GATEWAY · GEMINI READY';}else{if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';}}).catch(error=>{console.warn('[Wulan] Gemini health check failed',error);const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';});
+    import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));import('../../ui/neural-field.js').then(()=>import('../../ui/neural-field-v4.js')).catch(error=>console.error('[Wulan] neural field failed to load',error));import('../../ui/chat-runtime.js').catch(error=>console.error('[Wulan] chat runtime failed to load',error));import('../../ui/cognitive-chat.js').catch(error=>console.error('[Wulan] cognitive chat failed to load',error));
   }
   return core;
 }

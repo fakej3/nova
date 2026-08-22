@@ -25,5 +25,6 @@ const STYLE=`#wulan-neural-field .nf-canvas{opacity:0}#wulan-neural-field .nf-or
   core.events.on('memory.created',()=>{if(root.classList.contains('open'))layout()});core.events.on('neural.updated',()=>{if(root.classList.contains('open'))layout()});core.events.on('neural.activated',()=>{if(root.classList.contains('open'))layout()});
   old.style.display='none';window.addEventListener('resize',resize);resize();draw();return true;
  };
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{const timer=setInterval(()=>{if(boot())clearInterval(timer)},100),{once:true});else{const timer=setInterval(()=>{if(boot())clearInterval(timer)},100)}
+ const wait=()=>{if(boot())return;setTimeout(wait,100)};
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',wait,{once:true});else wait();
 })();

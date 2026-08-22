@@ -10,6 +10,7 @@ export function createDefaultWulanCore(){
  if(typeof window!=='undefined'){
   window.WULAN_CORE=core;
   import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
+  import('../../ui/neural-field.js').catch(error=>console.error('[Wulan] neural field failed to load',error));
  }
  return core;
 }

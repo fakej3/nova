@@ -10,6 +10,7 @@ import { WulanWorldModel, seedWulanWorld } from './world.js';
 import { createObservationIngestor } from './observation.js';
 import { connectWorldReconciliation } from './reconciliation-events.js';
 import { assessWorldChange, connectChangeSignificance } from './change-significance.js';
+import { createChangeTrail } from './change-trail.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 import { registerStrategyLab } from './strategy-lab.js';
 
@@ -46,6 +47,7 @@ export function createWulanCore(){
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);
+  core.changeTrail=createChangeTrail({memory,events});
   events.on('world.change_assessed',event=>{
     if(!event.payload?.shouldReason)return;
     const {level,source,subject,totalChanges,fields}=event.payload;

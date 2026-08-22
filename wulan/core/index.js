@@ -6,14 +6,20 @@ import { WulanNeuralSubstrate } from './neural.js';
 import { WulanSemanticMemory } from './semantic-memory.js';
 import { WulanAIGateway } from './ai-gateway.js';
 import { WulanCognitionLoop } from './cognition.js';
+import { WulanWorldModel, seedWulanWorld } from './world.js';
+import { createObservationIngestor } from './observation.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 
 export function createWulanCore(){
-  const events=new WulanEventBus(); const capabilities=new CapabilityRegistry(); const memory=new WulanMemoryStore(); const learning=new WulanLearningStore(); const neural=new WulanNeuralSubstrate(); const semantic=new WulanSemanticMemory(); const ai=new WulanAIGateway();
+  const events=new WulanEventBus();
+  const world=seedWulanWorld(new WulanWorldModel());
+  const observationIngestor=createObservationIngestor({world,events});
+  const capabilities=new CapabilityRegistry({observationIngestor});
+  const memory=new WulanMemoryStore(); const learning=new WulanLearningStore(); const neural=new WulanNeuralSubstrate(); const semantic=new WulanSemanticMemory(); const ai=new WulanAIGateway();
   const state={status:'booting',agents:new Map(),integrations:new Map()};
-  const core={events,capabilities,memory,learning,neural,semantic,ai,state,
+  const core={events,world,observationIngestor,capabilities,memory,learning,neural,semantic,ai,state,
     registerAgent(agent){if(!agent?.id||!agent?.name)throw new TypeError('Agent requires id and name');if(state.agents.has(agent.id))throw new Error(`Agent already registered: ${agent.id}`);const registered=state.agents.set(agent.id,{status:'idle',...agent}).get(agent.id);neural.ensureNeuron({id:`agent:${agent.id}`,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});return registered;},
-    registerIntegration(integration){if(!integration?.id||!integration?.name)throw new TypeError('Integration requires id and name');if(state.integrations.has(integration.id))throw new Error(`Integration already registered: ${integration.id}`);return state.integrations.set(integration.id,{status:'disconnected',...integration}).get(integration.id);},
+    registerIntegration(integration){if(!integration?.id||!integration?.name)throw new TypeError('Integration requires id and name');if(state.integrations.has(integration.id))throw new Error(`Integration already registered: ${integration.id}`);const registered=state.integrations.set(integration.id,{status:'disconnected',...integration}).get(integration.id);if(integration.id==='sentinel')world.upsertProject({id:'sentinel',name:'Sentinel',repository:integration.repository??'fakej3/Sentinel',branch:integration.branch??'main',capabilities:['github.inspect','sentinel.inspect']});return registered;},
     startAgent(agentId,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);if(agent.status==='active')return agent;agent.status='active';events.emit(WULAN_EVENTS.AGENT_STARTED,{agentId,...meta});return agent;},
     finishAgent(agentId,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);agent.status='idle';events.emit(WULAN_EVENTS.AGENT_FINISHED,{agentId,...meta});return agent;},
     failAgent(agentId,error,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);agent.status='error';events.emit(WULAN_EVENTS.AGENT_FAILED,{agentId,error:error instanceof Error?error.message:String(error),...meta});return agent;},
@@ -24,11 +30,11 @@ export function createWulanCore(){
     searchMemory(query,options={}){const results=memory.search(query,options);neural.activate(query,{limit:24,hops:3,reinforce:true});events.emit(WULAN_EVENTS.MEMORY_RETRIEVED,{query,count:results.length});events.emit(WULAN_EVENTS.NEURAL_ACTIVATED,{query,trace:neural.snapshot({limit:24}).trace});return results;},
     async searchSemanticMemory(query,{limit=10,minScore=.35,providerId}={}){const vector=await ai.embed(query,{providerId});const hits=semantic.search(vector,{limit,minScore});neural.activate(query,{limit:24,hops:3,reinforce:true});events.emit(WULAN_EVENTS.MEMORY_RETRIEVED,{query,count:hits.length,mode:'semantic'});events.emit(WULAN_EVENTS.NEURAL_ACTIVATED,{query,trace:neural.snapshot({limit:24}).trace,mode:'semantic'});return hits.map(hit=>({memory:memory.get(hit.id),score:hit.score,mode:'semantic'})).filter(result=>result.memory);},
     consolidateNeural(options={}){const result=neural.consolidate(options);events.emit(WULAN_EVENTS.NEURAL_UPDATED,{reason:'consolidation',...result});return result;},
-    boot(){if(state.status==='ready')return state;neural.consolidate();state.status='ready';events.emit(WULAN_EVENTS.SYSTEM_READY,{agents:[...state.agents.keys()],integrations:[...state.integrations.keys()],neural:neural.stats(),semantic:semantic.stats()});return state;}
+    boot(){if(state.status==='ready')return state;neural.consolidate();state.status='ready';events.emit(WULAN_EVENTS.SYSTEM_READY,{agents:[...state.agents.keys()],integrations:[...state.integrations.keys()],neural:neural.stats(),semantic:semantic.stats(),world:{projects:world.listProjects().length,systems:world.listSystems().length}});return state;}
   };
   core.capabilities.register({id:'memory.search',name:'Memory Search',description:'Search Wulan memories relevant to the current request.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=8}={})=>core.searchMemory(String(query??''),{limit})});
   core.capabilities.register({id:'memory.remember',name:'Remember',description:'Store an explicit durable memory for Wulan.',risk:'write',permissions:['memory:write'],inputSchema:{content:'string',type:'string?',importance:'number?',tags:'string[]?'},execute:async({content,type='fact',importance=.7,tags=[]}={})=>core.remember({content,type,importance,tags,source:'capability'})});
-  core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats()})});
+  core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats(),world:world.snapshot()})});
   const sentinelInspector=createSentinelInspector();
   core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
   core.cognition=new WulanCognitionLoop(core);

@@ -1,7 +1,10 @@
 // Wulan Core — capability registry.
 // Capabilities are the only approved boundary for external actions.
 export class CapabilityRegistry {
-  constructor() { this.capabilities = new Map(); }
+  constructor({ observationIngestor = null } = {}) {
+    this.capabilities = new Map();
+    this.observationIngestor = observationIngestor;
+  }
 
   register(definition) {
     if (!definition?.id || !definition?.name || typeof definition.execute !== 'function') {
@@ -32,7 +35,19 @@ export class CapabilityRegistry {
   async invoke(id, input, context = {}) {
     const capability = this.get(id);
     if (!capability) throw new Error(`Unknown capability: ${id}`);
-    return capability.execute(input, context);
+
+    const result = await capability.execute(input, context);
+
+    if (this.observationIngestor) {
+      this.observationIngestor.ingestCapabilityResult({
+        capability: id,
+        subject: input?.subject ?? input?.project ?? null,
+        result,
+        confidence: 1
+      });
+    }
+
+    return result;
   }
 
   async verify(id, result, expected, context = {}) {

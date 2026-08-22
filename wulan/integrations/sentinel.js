@@ -9,50 +9,33 @@ async function githubFetch(path, { token, fetchImpl = fetch } = {}) {
   return response.json();
 }
 
-export function createSentinelInspector({ env = globalThis.process?.env ?? {}, fetchImpl = fetch } = {}) {
-  return async ({ repo = DEFAULT_REPO, branch = 'main', paths = [] } = {}) => {
-    const [repository, ref, vercel] = await Promise.all([
-      githubFetch(`/repos/${repo}`, { token: env.GITHUB_TOKEN, fetchImpl }),
-      githubFetch(`/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, { token: env.GITHUB_TOKEN, fetchImpl }),
-      inspectVercel({ project: DEFAULT_VERCEL_PROJECT, token: env.VERCEL_TOKEN, fetchImpl })
-    ]);
-
-    const files = {};
-    for (const path of paths.slice(0, 8)) {
-      files[path] = await githubFetch(`/repos/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`, {
-        token: env.GITHUB_TOKEN,
-        fetchImpl
-      });
-    }
-
-    return {
-      project: 'Sentinel',
-      repository: {
-        fullName: repository.full_name,
-        defaultBranch: repository.default_branch,
-        updatedAt: repository.updated_at,
-        openIssues: repository.open_issues_count,
-        visibility: repository.visibility
-      },
-      branch: { name: branch, sha: ref.object?.sha ?? null },
-      vercel,
-      files
-    };
-  };
-}
-
-async function inspectVercel({ project, token, fetchImpl }) {
-  if (!token) return { configured: false, project };
-  const response = await fetchImpl(`https://api.vercel.com/v9/projects/${encodeURIComponent(project)}`, {
+async function vercelFetch(path, { token, fetchImpl = fetch } = {}) {
+  if (!token) return null;
+  const response = await fetchImpl(`https://api.vercel.com${path}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) throw new Error(`Vercel request failed: ${response.status}`);
-  const data = await response.json();
-  return {
-    configured: true,
-    project: data.name,
-    framework: data.framework ?? null,
-    updatedAt: data.updatedAt ?? null
+  return response.json();
+}
+
+export function createSentinelInspector({ env = globalThis.process?.env ?? {}, fetchImpl = fetch } = {}) {
+  return async ({ repo = DEFAULT_REPO, branch = 'main', paths = [] } = {}) => {
+    const repository = await githubFetch(`/repos/${repo}`, { token: env.GITHUB_TOKEN, fetchImpl });
+    const ref = await githubFetch(`/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`, { token: env.GITHUB_TOKEN, fetchImpl });
+    const deployments = await vercelFetch(`/v6/deployments?projectId=${encodeURIComponent(env.SENTINEL_VERCEL_PROJECT_ID ?? DEFAULT_VERCEL_PROJECT)}&limit=5`, { token: env.VERCEL_TOKEN, fetchImpl });
+    const files = {};
+    for (const path of paths.slice(0, 8)) files[path] = await githubFetch(`/repos/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`, { token: env.GITHUB_TOKEN, fetchImpl });
+    return {
+      project: 'Sentinel',
+      repository: { fullName: repository.full_name, defaultBranch: repository.default_branch, updatedAt: repository.updated_at, openIssues: repository.open_issues_count, visibility: repository.visibility },
+      branch: { name: branch, sha: ref.object?.sha ?? null },
+      vercel: deployments ? {
+        configured: true,
+        project: env.SENTINEL_VERCEL_PROJECT_ID ?? DEFAULT_VERCEL_PROJECT,
+        deployments: (deployments.deployments ?? []).slice(0, 5).map(item => ({ id: item.uid ?? item.id, state: item.readyState ?? item.state, target: item.target ?? null, url: item.url ?? null, createdAt: item.createdAt ?? item.created ?? null, commitSha: item.meta?.githubCommitSha ?? null, commitMessage: item.meta?.githubCommitMessage ?? null }))
+      } : { configured: false, project: env.SENTINEL_VERCEL_PROJECT_ID ?? DEFAULT_VERCEL_PROJECT },
+      files
+    };
   };
 }
 

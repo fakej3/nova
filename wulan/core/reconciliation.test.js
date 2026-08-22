@@ -14,9 +14,20 @@ describe('world-state reconciliation', () => {
     expect(result.counts).toEqual({ added: 1, removed: 1, changed: 1 });
   });
 
+  test('reports an added field as a world change', () => {
+    const result = reconcileObservations({ data: { status: 'ready' } }, { data: { status: 'ready', version: 2 } });
+    expect(result.changed).toBe(true);
+    expect(result.counts).toEqual({ added: 1, removed: 0, changed: 0 });
+  });
+
+  test('reports a removed field as a world change', () => {
+    const result = reconcileObservations({ data: { status: 'ready', version: 2 } }, { data: { status: 'ready' } });
+    expect(result.changed).toBe(true);
+    expect(result.counts).toEqual({ added: 0, removed: 1, changed: 0 });
+  });
+
   test('first observation establishes baseline without reporting a change', () => {
-    const world = { unused: true };
-    const reconciler = createWorldReconciler({ world });
+    const reconciler = createWorldReconciler({ world: {} });
     const result = reconciler.reconcile({ source: 'sentinel.inspect', subject: 'sentinel', data: { sha: 'AAA' } });
 
     expect(result.previous).toBeNull();

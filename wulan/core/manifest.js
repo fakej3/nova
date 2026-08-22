@@ -15,12 +15,16 @@ export function createDefaultWulanCore(){
   core.registerIntegration({id:'edgelab',name:'EdgeLab',kind:'research'});
   core.registerIntegration({id:'github',name:'GitHub',kind:'development'});
 
-  core.neural.ensureNeuron({id:'system:wulan-core',label:'WULAN CORE',type:'system',strength:.7,tags:['system','routing','core']});
-  for (const agent of core.state.agents.values()) {
-    const id=`agent:${agent.id}`;
-    core.neural.connect('system:wulan-core',id,.32,1);
-    core.neural.connect(id,'system:wulan-core',.22,1);
-  }
+  const seedBaseNeuralTopology=()=>{
+    core.neural.ensureNeuron({id:'system:wulan-core',label:'WULAN CORE',type:'system',strength:.7,tags:['system','routing','core']});
+    for(const agent of core.state.agents.values()){
+      const id=`agent:${agent.id}`;
+      core.neural.ensureNeuron({id,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});
+      core.neural.connect('system:wulan-core',id,.28,1);
+      core.neural.connect(id,'system:wulan-core',.2,1);
+    }
+  };
+  seedBaseNeuralTopology();
 
   core.boot();
 
@@ -40,8 +44,12 @@ export function createDefaultWulanCore(){
         const payload=JSON.parse(raw);
         if(Array.isArray(payload.memories)) for(const memory of payload.memories) core.remember(memory);
         if(Array.isArray(payload.learning)) for(const record of payload.learning) core.recordFeedback(record);
-        if(payload.neural) core.neural.importState(payload.neural);
+        // v2 neural snapshots were produced before the synapse-weight fix.
+        // Rebuild those graphs from durable memories + learning instead of
+        // carrying the corrupted topology forward. v3+ snapshots are safe.
+        if(payload.neural?.version>=3) core.neural.importState(payload.neural);
         if(payload.semantic && typeof core.semantic?.importState==='function') core.semantic.importState(payload.semantic);
+        seedBaseNeuralTopology();
       }
     } catch(error) { console.warn('[Wulan] local state restore skipped',error); }
 

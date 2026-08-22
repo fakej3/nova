@@ -53,7 +53,7 @@ import { WULAN_EVENTS } from '../wulan/core/event-bus.js';
       if (memoryHint) memoryHint.textContent = `memory · ${memories.length} stored`;
       const payload = {
         memories,
-        learning: core.learning.list ? core.learning.list({ limit: 5000 }) : [],
+        learning: core.learning.recent(5000),
         neural: core.neural.exportState ? core.neural.exportState() : core.neural.snapshot(),
         semantic: core.semantic.exportState ? core.semantic.exportState() : null
       };
@@ -87,7 +87,6 @@ import { WULAN_EVENTS } from '../wulan/core/event-bus.js';
 
       setState(run.results?.length ? 'acting' : 'thinking', run.results?.length ? 'responding after executing the plan' : 'forming the response');
       addMessage('wulan', answer);
-      core.events.emit(WULAN_EVENTS.RESPONSE_READY, { text: answer, cognitionRun: run.id });
       core.recordFeedback({
         outcome: run.status === 'completed' || run.status === 'planned' ? 'accepted' : 'none',
         context: text,

@@ -46,5 +46,10 @@ export function createWulanCore(){
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);
+  events.on('world.change_assessed',event=>{
+    if(!event.payload?.shouldReason)return;
+    const {level,source,subject,totalChanges,fields}=event.payload;
+    void core.cognize(`World change detected (${level}) for ${subject ?? source ?? 'unknown'}: ${totalChanges} changed field(s). Fields: ${fields.join(', ')}`,{execute:false,context:{trigger:'world-change',severity:level,source,subject}});
+  });
   return core;
 }

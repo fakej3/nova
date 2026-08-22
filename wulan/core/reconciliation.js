@@ -30,16 +30,18 @@ export function reconcileObservations(previous, current) {
     if (!(key in after)) removed[key] = value;
   }
 
+  const counts = {
+    added: Object.keys(added).length,
+    removed: Object.keys(removed).length,
+    changed: Object.keys(changed).length
+  };
+
   return {
-    changed: Object.keys(changed).length > 0,
+    changed: counts.added > 0 || counts.removed > 0 || counts.changed > 0,
     added,
     removed,
     changedFields: changed,
-    counts: {
-      added: Object.keys(added).length,
-      removed: Object.keys(removed).length,
-      changed: Object.keys(changed).length
-    }
+    counts
   };
 }
 
@@ -52,12 +54,13 @@ export function createWorldReconciler({ world } = {}) {
       if (!observation?.source) throw new TypeError('Observation source is required');
       const key = `${observation.source}:${observation.subject ?? ''}`;
       const previous = latest.get(key) ?? null;
+      const baseline = flatten(observation.data ?? {});
       const diff = previous ? reconcileObservations(previous, observation) : {
         changed: false,
-        added: flatten(observation.data ?? {}),
+        added: baseline,
         removed: {},
         changedFields: {},
-        counts: { added: Object.keys(flatten(observation.data ?? {})).length, removed: 0, changed: 0 }
+        counts: { added: Object.keys(baseline).length, removed: 0, changed: 0 }
       };
       latest.set(key, observation);
       return { observation, previous, diff };

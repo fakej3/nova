@@ -9,7 +9,7 @@ import { WulanCognitionLoop } from './cognition.js';
 import { WulanWorldModel, seedWulanWorld } from './world.js';
 import { createObservationIngestor } from './observation.js';
 import { connectWorldReconciliation } from './reconciliation-events.js';
-import { connectChangeSignificance } from './change-significance.js';
+import { assessWorldChange, connectChangeSignificance } from './change-significance.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 import { registerStrategyLab } from './strategy-lab.js';
 
@@ -42,7 +42,7 @@ export function createWulanCore(){
   core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats(),world:world.snapshot()})});
   const sentinelInspector=createSentinelInspector();
   core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
-  core.capabilities.register({id:'world.change_assess',name:'Assess World Change',description:'Assess whether a detected world change is insignificant, relevant, or critical.',risk:'read',permissions:['world:read'],inputSchema:{event:'object'},execute:async({event}={})=>core.significance.assess?core.significance.assess(event):null});
+  core.capabilities.register({id:'world.change_assess',name:'Assess World Change',description:'Assess whether a detected world change is insignificant, relevant, or critical.',risk:'read',permissions:['world:read'],inputSchema:{event:'object'},execute:async({event}={})=>assessWorldChange(event)});
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);

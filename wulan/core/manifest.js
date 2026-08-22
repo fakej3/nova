@@ -66,6 +66,7 @@ export function createDefaultWulanCore(){
     import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
     import('../../ui/neural-field.js').then(()=>import('../../ui/neural-field-v4.js')).catch(error=>console.error('[Wulan] neural field failed to load',error));
     import('../../ui/chat-runtime.js').catch(error=>console.error('[Wulan] chat runtime failed to load',error));
+    import('../../ui/cognitive-chat.js').catch(error=>console.error('[Wulan] cognitive chat failed to load',error));
   }
   return core;
 }

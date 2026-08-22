@@ -6,6 +6,7 @@ import { WulanNeuralSubstrate } from './neural.js';
 import { WulanSemanticMemory } from './semantic-memory.js';
 import { WulanAIGateway } from './ai-gateway.js';
 import { WulanCognitionLoop } from './cognition.js';
+import { createSentinelInspector } from '../integrations/sentinel.js';
 
 export function createWulanCore(){
   const events=new WulanEventBus(); const capabilities=new CapabilityRegistry(); const memory=new WulanMemoryStore(); const learning=new WulanLearningStore(); const neural=new WulanNeuralSubstrate(); const semantic=new WulanSemanticMemory(); const ai=new WulanAIGateway();
@@ -25,6 +26,11 @@ export function createWulanCore(){
     consolidateNeural(options={}){const result=neural.consolidate(options);events.emit(WULAN_EVENTS.NEURAL_UPDATED,{reason:'consolidation',...result});return result;},
     boot(){if(state.status==='ready')return state;neural.consolidate();state.status='ready';events.emit(WULAN_EVENTS.SYSTEM_READY,{agents:[...state.agents.keys()],integrations:[...state.integrations.keys()],neural:neural.stats(),semantic:semantic.stats()});return state;}
   };
+  core.capabilities.register({id:'memory.search',name:'Memory Search',description:'Search Wulan memories relevant to the current request.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=8}={})=>core.searchMemory(String(query??''),{limit})});
+  core.capabilities.register({id:'memory.remember',name:'Remember',description:'Store an explicit durable memory for Wulan.',risk:'write',permissions:['memory:write'],inputSchema:{content:'string',type:'string?',importance:'number?',tags:'string[]?'},execute:async({content,type='fact',importance=.7,tags=[]}={})=>core.remember({content,type,importance,tags,source:'capability'})});
+  core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats()})});
+  const sentinelInspector=createSentinelInspector();
+  core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);
   return core;

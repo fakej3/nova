@@ -15,22 +15,38 @@ export function createDefaultWulanCore(){
   core.registerIntegration({id:'edgelab',name:'EdgeLab',kind:'research'});
   core.registerIntegration({id:'github',name:'GitHub',kind:'development'});
 
-  core.capabilities.register({id:'memory.search',name:'Memory Search',version:'1.0',description:'Search Wulan memory using lexical retrieval.',permissions:['memory:read'],execute:async({query,limit=8}={})=>{
-    if(!String(query??'').trim()) return [];
-    return core.searchMemory(String(query),{limit});
-  }});
-  core.capabilities.register({id:'memory.remember',name:'Remember',version:'1.0',description:'Store an explicit durable memory.',permissions:['memory:write'],execute:async({content,type='fact',importance=.7,tags=[]}={})=>{
-    if(!String(content??'').trim()) throw new Error('Memory content is required');
-    return core.remember({content,type,importance,tags,source:'capability'});
-  }});
-  core.capabilities.register({id:'system.status',name:'System Status',version:'1.0',description:'Inspect Wulan runtime, agents, integrations and neural state.',permissions:['system:read'],execute:async()=>({
-    status:core.state.status,
-    agents:[...core.state.agents.values()].map(({id,name,role,status})=>({id,name,role,status})),
-    integrations:[...core.state.integrations.values()].map(({id,name,kind,status})=>({id,name,kind,status})),
-    capabilities:core.capabilities.list(),
-    neural:core.neural.snapshot(),
-    semantic:core.semantic.stats()
-  })});
+  core.capabilities.register({
+    id:'memory.search',name:'Memory Search',version:'1.0',risk:'read',description:'Search Wulan memory using lexical and semantic retrieval.',permissions:['memory:read'],
+    inputSchema:{type:'object',required:['query'],properties:{query:{type:'string'},limit:{type:'number'}}},
+    execute:async({query,limit=8}={})=>{
+      if(!String(query??'').trim()) return {lexical:[],semantic:[]};
+      const lexical=core.searchMemory(String(query),{limit});
+      let semantic=[];
+      try{if(core.ai.status?.().configured) semantic=await core.searchSemanticMemory(String(query),{limit});}catch{}
+      return {lexical,semantic};
+    }
+  });
+
+  core.capabilities.register({
+    id:'memory.remember',name:'Remember',version:'1.0',risk:'write',description:'Store an explicit durable memory.',permissions:['memory:write'],
+    inputSchema:{type:'object',required:['content'],properties:{content:{type:'string'},type:{type:'string'},importance:{type:'number'},tags:{type:'array'}}},
+    execute:async({content,type='fact',importance=.7,tags=[]}={})=>{
+      if(!String(content??'').trim()) throw new Error('Memory content is required');
+      return core.remember({content,type,importance,tags,source:'capability'});
+    }
+  });
+
+  core.capabilities.register({
+    id:'system.status',name:'System Status',version:'1.0',risk:'read',description:'Inspect Wulan runtime, agents, integrations and neural state.',permissions:['system:read'],
+    execute:async()=>({
+      status:core.state.status,
+      agents:[...core.state.agents.values()].map(({id,name,role,status})=>({id,name,role,status})),
+      integrations:[...core.state.integrations.values()].map(({id,name,kind,status})=>({id,name,kind,status})),
+      capabilities:core.capabilities.list(),
+      neural:core.neural.stats(),
+      semantic:core.semantic.stats()
+    })
+  });
 
   const seedBaseNeuralTopology=()=>{
     core.neural.ensureNeuron({id:'system:wulan-core',label:'WULAN CORE',type:'system',strength:.7,tags:['system','routing','core']});

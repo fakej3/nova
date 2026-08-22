@@ -15,8 +15,6 @@ export function createDefaultWulanCore(){
   core.registerIntegration({id:'edgelab',name:'EdgeLab',kind:'research'});
   core.registerIntegration({id:'github',name:'GitHub',kind:'development'});
 
-  // These are real structural relationships in Wulan's substrate, not fake UI edges:
-  // the core is the routing hub for its registered agents.
   core.neural.ensureNeuron({id:'system:wulan-core',label:'WULAN CORE',type:'system',strength:.7,tags:['system','routing','core']});
   for (const agent of core.state.agents.values()) {
     const id=`agent:${agent.id}`;
@@ -27,8 +25,6 @@ export function createDefaultWulanCore(){
   core.boot();
 
   if(typeof window!=='undefined'){
-    // The current shell intentionally keeps runtime presence elements hidden.
-    // The living runtime still expects a presence anchor to exist.
     if(!document.querySelector('.presence-core')){
       const anchor=document.createElement('div');
       anchor.className='presence-core';
@@ -37,7 +33,6 @@ export function createDefaultWulanCore(){
       document.body?.appendChild(anchor);
     }
 
-    // Restore the real local-first state before the UI starts reading it.
     try {
       const persistenceKey='wulan-local-v2';
       const raw=localStorage.getItem(persistenceKey);
@@ -48,36 +43,21 @@ export function createDefaultWulanCore(){
         if(payload.neural) core.neural.importState(payload.neural);
         if(payload.semantic && typeof core.semantic?.importState==='function') core.semantic.importState(payload.semantic);
       }
-    } catch(error) {
-      console.warn('[Wulan] local state restore skipped',error);
-    }
+    } catch(error) { console.warn('[Wulan] local state restore skipped',error); }
 
     window.WULAN_CORE=core;
-
-    // Keep the UI honest about the actual server-side Gemini configuration.
     fetch('/api/gemini',{headers:{Accept:'application/json'}})
       .then(r=>r.ok?r.json():Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(health=>{
-        const state=document.getElementById('provider-state');
-        const hint=document.getElementById('provider-hint');
-        if(health?.configured){
-          if(state) state.textContent='READY';
-          if(hint) hint.textContent='AI GATEWAY · GEMINI READY';
-        }else{
-          if(state) state.textContent='NOT CONFIGURED';
-          if(hint) hint.textContent='AI GATEWAY · GEMINI KEY NEEDED';
-        }
+        const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');
+        if(health?.configured){if(state)state.textContent='READY';if(hint)hint.textContent='AI GATEWAY · GEMINI READY';}
+        else{if(state)state.textContent='NOT CONFIGURED';if(hint)hint.textContent='AI GATEWAY · GEMINI KEY NEEDED';}
       })
-      .catch(error=>{
-        console.warn('[Wulan] Gemini health check failed',error);
-        const state=document.getElementById('provider-state');
-        const hint=document.getElementById('provider-hint');
-        if(state) state.textContent='UNAVAILABLE';
-        if(hint) hint.textContent='AI GATEWAY · UNAVAILABLE';
-      });
+      .catch(error=>{console.warn('[Wulan] Gemini health check failed',error);const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(state)state.textContent='UNAVAILABLE';if(hint)hint.textContent='AI GATEWAY · UNAVAILABLE';});
 
     import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
     import('../../ui/neural-field.js').catch(error=>console.error('[Wulan] neural field failed to load',error));
+    import('../../ui/neural-polish.js').catch(error=>console.error('[Wulan] neural polish failed to load',error));
   }
   return core;
 }

@@ -9,6 +9,7 @@ import { WulanCognitionLoop } from './cognition.js';
 import { WulanWorldModel, seedWulanWorld } from './world.js';
 import { createObservationIngestor } from './observation.js';
 import { connectWorldReconciliation } from './reconciliation-events.js';
+import { connectChangeSignificance } from './change-significance.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 import { registerStrategyLab } from './strategy-lab.js';
 
@@ -18,9 +19,10 @@ export function createWulanCore(){
   const observationIngestor=createObservationIngestor({world,events});
   const capabilities=new CapabilityRegistry({observationIngestor});
   const reconciliation=connectWorldReconciliation({world,events});
+  const significance=connectChangeSignificance({events});
   const memory=new WulanMemoryStore(); const learning=new WulanLearningStore(); const neural=new WulanNeuralSubstrate(); const semantic=new WulanSemanticMemory(); const ai=new WulanAIGateway();
   const state={status:'booting',agents:new Map(),integrations:new Map()};
-  const core={events,world,observationIngestor,reconciliation,capabilities,memory,learning,neural,semantic,ai,state,
+  const core={events,world,observationIngestor,reconciliation,significance,capabilities,memory,learning,neural,semantic,ai,state,
     registerAgent(agent){if(!agent?.id||!agent?.name)throw new TypeError('Agent requires id and name');if(state.agents.has(agent.id))throw new Error(`Agent already registered: ${agent.id}`);const registered=state.agents.set(agent.id,{status:'idle',...agent}).get(agent.id);neural.ensureNeuron({id:`agent:${agent.id}`,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});return registered;},
     registerIntegration(integration){if(!integration?.id||!integration?.name)throw new TypeError('Integration requires id and name');if(state.integrations.has(integration.id))throw new Error(`Integration already registered: ${integration.id}`);const registered=state.integrations.set(integration.id,{status:'disconnected',...integration}).get(integration.id);if(integration.id==='sentinel')world.upsertProject({id:'sentinel',name:'Sentinel',repository:integration.repository??'fakej3/Sentinel',branch:integration.branch??'main',capabilities:['github.inspect','sentinel.inspect']});return registered;},
     startAgent(agentId,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);if(agent.status==='active')return agent;agent.status='active';events.emit(WULAN_EVENTS.AGENT_STARTED,{agentId,...meta});return agent;},
@@ -40,6 +42,7 @@ export function createWulanCore(){
   core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats(),world:world.snapshot()})});
   const sentinelInspector=createSentinelInspector();
   core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
+  core.capabilities.register({id:'world.change_assess',name:'Assess World Change',description:'Assess whether a detected world change is insignificant, relevant, or critical.',risk:'read',permissions:['world:read'],inputSchema:{event:'object'},execute:async({event}={})=>core.significance.assess?core.significance.assess(event):null});
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);

@@ -46,17 +46,18 @@ export function createDefaultWulanCore(){
     } catch(error) { console.warn('[Wulan] local state restore skipped',error); }
 
     window.WULAN_CORE=core;
-    fetch('/api/gemini',{headers:{Accept:'application/json'}})
+    fetch('/api/gemini',{headers:{Accept:'application/json'},cache:'no-store'})
       .then(r=>r.ok?r.json():Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(health=>{
         const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');
         if(health?.configured){if(state)state.textContent='READY';if(hint)hint.textContent='AI GATEWAY · GEMINI READY';}
-        else{if(state)state.textContent='NOT CONFIGURED';if(hint)hint.textContent='AI GATEWAY · GEMINI KEY NEEDED';}
+        else{if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';}
       })
-      .catch(error=>{console.warn('[Wulan] Gemini health check failed',error);const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(state)state.textContent='UNAVAILABLE';if(hint)hint.textContent='AI GATEWAY · UNAVAILABLE';});
+      .catch(error=>{console.warn('[Wulan] Gemini health check failed',error);const state=document.getElementById('provider-state'),hint=document.getElementById('provider-hint');if(state)state.textContent='LOCAL';if(hint)hint.textContent='AI GATEWAY · LOCAL CORE';});
 
     import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
-    import('../../ui/neural-field.js').catch(error=>console.error('[Wulan] neural field failed to load',error));
+    import('../../ui/neural-field.js').then(()=>import('../../ui/neural-field-v3.js')).catch(error=>console.error('[Wulan] neural field failed to load',error));
+    import('../../ui/chat-runtime.js').catch(error=>console.error('[Wulan] chat runtime failed to load',error));
   }
   return core;
 }

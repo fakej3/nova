@@ -1,5 +1,5 @@
 /** Browser-safe Gemini adapter. The API key stays server-side. */
-const ENDPOINT='/api/gemini', EMBED_ENDPOINT='/api/gemini-embed', MODEL='gemini-2.5-flash', TIMEOUT_MS=30000;
+const ENDPOINT='/api/gemini', EMBED_ENDPOINT='/api/gemini-embed', MODEL='gemini-2.5-flash', TIMEOUT_MS=6500;
 let _callCount=0,_lastCallAt=null,_lastResponseMs=null,_lastSuccessAt=null,_lastFailAt=null,_lastFailMsg=null,_lastStatus=null,_lastTokensIn=null,_lastTokensOut=null;
 export function getGeminiStats(){return{model:MODEL,endpoint:ENDPOINT,callCount:_callCount,lastCallAt:_lastCallAt,lastResponseMs:_lastResponseMs,lastSuccessAt:_lastSuccessAt,lastFailAt:_lastFailAt,lastFailMsg:_lastFailMsg,lastStatus:_lastStatus,lastTokensIn:_lastTokensIn,lastTokensOut:_lastTokensOut};}
 export function resetGeminiStats(){_callCount=0;_lastCallAt=null;_lastResponseMs=null;_lastSuccessAt=null;_lastFailAt=null;_lastFailMsg=null;_lastStatus=null;_lastTokensIn=null;_lastTokensOut=null;}

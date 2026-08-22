@@ -2,12 +2,19 @@ const MODEL = 'gemini-2.5-flash';
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export default async function handler(req, res) {
+  const key = process.env.GEMINI_API_KEY;
+
+  // Safe health check: never return the key, only whether the server is configured.
+  if (req.method === 'GET') {
+    res.status(200).json({ configured: Boolean(key), model: MODEL });
+    return;
+  }
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     return;
   }
 
-  const key = process.env.GEMINI_API_KEY;
   if (!key) {
     res.status(503).json({ error: 'GEMINI_NOT_CONFIGURED' });
     return;

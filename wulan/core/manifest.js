@@ -57,7 +57,6 @@ export function createDefaultWulanCore(){
 
     import('../../ui/world-interactions.js').catch(error=>console.error('[Wulan] world UI failed to load',error));
     import('../../ui/neural-field.js').catch(error=>console.error('[Wulan] neural field failed to load',error));
-    import('../../ui/neural-polish.js').catch(error=>console.error('[Wulan] neural polish failed to load',error));
   }
   return core;
 }

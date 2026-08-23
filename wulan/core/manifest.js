@@ -12,14 +12,8 @@ export function createDefaultWulanCore(){
   core.registerAgent({id:'pixel',name:'PIXEL',role:'creative'});
 
   core.registerIntegration({id:'sentinel',name:'Sentinel',kind:'trading'});
-  core.registerIntegration({id:'edgelab',name:'EdgeLab',kind:'research'});
+  core.registerIntegration({id:'strategy-lab',name:'Strategy Lab',kind:'research'});
   core.registerIntegration({id:'github',name:'GitHub',kind:'development'});
-
-  core.capabilities.register({id:'memory.search',name:'Memory Search',version:'1.0',risk:'read',description:'Search Wulan memory using lexical and semantic retrieval.',permissions:['memory:read'],inputSchema:{type:'object',required:['query'],properties:{query:{type:'string'},limit:{type:'number'}}},execute:async({query,limit=8}={})=>{if(!String(query??'').trim())return {lexical:[],semantic:[]};const lexical=core.searchMemory(String(query),{limit});let semantic=[];try{if(core.ai.status?.().configured)semantic=await core.searchSemanticMemory(String(query),{limit});}catch{}return {lexical,semantic};}});
-
-  core.capabilities.register({id:'memory.remember',name:'Remember',version:'1.0',risk:'write',description:'Store an explicit durable memory.',permissions:['memory:write'],inputSchema:{type:'object',required:['content'],properties:{content:{type:'string'},type:{type:'string'},importance:{type:'number'},tags:{type:'array'}}},execute:async({content,type='fact',importance=.7,tags=[]}={})=>{if(!String(content??'').trim())throw new Error('Memory content is required');return core.remember({content,type,importance,tags,source:'capability'});}});
-
-  core.capabilities.register({id:'system.status',name:'System Status',version:'1.0',risk:'read',description:'Inspect Wulan runtime, agents, integrations and neural state.',permissions:['system:read'],execute:async()=>({status:core.state.status,agents:[...core.state.agents.values()].map(({id,name,role,status})=>({id,name,role,status})),integrations:[...core.state.integrations.values()].map(({id,name,kind,status})=>({id,name,kind,status})),capabilities:core.capabilities.list(),neural:core.neural.stats(),semantic:core.semantic.stats()})});
 
   core.capabilities.register({
     id:'github.inspect',name:'GitHub Inspect',version:'1.0',risk:'read',description:'Read public GitHub repository metadata, directories, or files through the server-side GitHub gateway.',permissions:['github:read'],

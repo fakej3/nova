@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   verify:
-    name: Verify JavaScript
+    name: Verify Nova runtime
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -48,7 +48,12 @@ jobs:
             wulan/core/memory.js \
             wulan/core/neural.js \
             wulan/core/cognition.js \
-            wulan/core/persistence.js; do
+            wulan/core/persistence.js \
+            wulan/core/runtime-health.js \
+            scripts/nova-smoke.mjs; do
             test -f "$file"
           done
-          echo 'Critical Wulan files present.'
+          echo 'Critical Nova files present.'
+
+      - name: Run Nova runtime smoke test
+        run: node scripts/nova-smoke.mjs

@@ -1,14 +1,8 @@
 import { createDefaultWulanCore } from './core/manifest.js';
-import { WulanLocalPersistence } from './core/living-state.js';
 
-const persistence=new WulanLocalPersistence();
-let core=null;
+const core=typeof window!=='undefined'&&window.WULAN_CORE?window.WULAN_CORE:createDefaultWulanCore();
+const persistence=core?.persistence??null;
 let bootError=null;
-try {
-  core=createDefaultWulanCore();
-} catch (error) {
-  bootError=error;
-}
 
 const canvas=document.querySelector('#neural');
 const ctx=canvas?.getContext('2d');
@@ -28,7 +22,7 @@ function showBootError(error){
   const message=String(error?.message||error||'Unknown neural runtime error');
   if(traceEl)traceEl.innerHTML=`<b>Neural runtime unavailable.</b><br>${escapeHtml(message)}`;
   if(footer)footer.textContent='NEURAL RUNTIME ERROR';
-  if(query)query.querySelector('button').disabled=true;
+  if(query?.querySelector('button'))query.querySelector('button').disabled=true;
 }
 function seedBaseline(){
   if(!core?.neural)return;
@@ -63,7 +57,7 @@ canvas?.addEventListener('pointermove',e=>{const r=canvas.getBoundingClientRect(
 canvas?.addEventListener('pointerleave',()=>{pointer.active=false;});
 canvas?.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect(),n=nearest(e.clientX-r.left,e.clientY-r.top);if(n){dragging=n;inspect(n);canvas.setPointerCapture(e.pointerId);}});
 canvas?.addEventListener('pointerup',e=>{dragging=null;try{canvas.releasePointerCapture(e.pointerId);}catch{}});
-query?.addEventListener('submit',e=>{e.preventDefault();if(!core){showBootError(bootError);return;}const text=input.value.trim();if(!text)return;try{ensureQueryConcepts(text);core.neural.activate(text);persistence.save(core);layout();input.value='';}catch(error){showBootError(error);}});
+query?.addEventListener('submit',e=>{e.preventDefault();if(!core){showBootError(bootError);return;}const text=input.value.trim();if(!text)return;try{ensureQueryConcepts(text);core.neural.activate(text);persistence?.saveCore?.(core);layout();input.value='';}catch(error){showBootError(error);}});
 if(core){
   seedBaseline();
   layout();
@@ -71,4 +65,4 @@ if(core){
   render();
 } else showBootError(bootError);
 window.addEventListener('resize',resize);
-window.addEventListener('beforeunload',()=>{try{if(core)persistence.save(core);}catch{}});
+window.addEventListener('beforeunload',()=>{try{persistence?.saveCore?.(core);}catch{}});

@@ -1,10 +1,5 @@
 import { createWulanCore } from './index.js';
 
-function createMemoryStorage(){
-  const values=new Map();
-  return {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};
-}
-
 describe('Wulan runtime health',()=>{
   test('reports a healthy booted core with baseline subsystems',()=>{
     const core=createWulanCore({persistence:{available:()=>true,load:()=>null,saveCore:()=>true}});
@@ -18,17 +13,15 @@ describe('Wulan runtime health',()=>{
   });
 
   test('repairs an empty neural substrate without replacing memory',()=>{
-    const storage=createMemoryStorage();
-    const core=createWulanCore({persistence:new (class{available(){return true}load(){return null}saveCore(){return true}})()});
+    const core=createWulanCore({persistence:{available:()=>true,load:()=>null,saveCore:()=>true}});
     core.registerAgent({id:'atlas',name:'ATLAS',role:'research'});
     const memory=core.remember({content:'repair must preserve this memory',type:'fact'});
-    core.neural.clear?.();
+    core.neural.importState({version:3,neurons:[],synapses:[],activations:[],updates:0});
     const result=core.health.repair();
     expect(result.repaired).toBe(true);
     expect(core.memory.get(memory.id)?.content).toContain('repair must preserve this memory');
     expect(core.neural.stats().neurons).toBeGreaterThanOrEqual(2);
     expect(core.neural.stats().synapses).toBeGreaterThanOrEqual(2);
-    void storage;
   });
 
   test('system health capability is read-only and returns the same runtime report',async()=>{

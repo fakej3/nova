@@ -1,11 +1,12 @@
-export function createChangeTrail({ memory, events } = {}) {
-  if (!memory?.add || !events?.on) throw new TypeError('Memory store and event bus are required');
+export function createChangeTrail({ memory, remember, events } = {}) {
+  const store = typeof remember === 'function' ? remember : memory?.add;
+  if (typeof store !== 'function' || !events?.on) throw new TypeError('Memory store and event bus are required');
 
   const records = new Map();
 
   const unsubscribe = events.on('world.change_assessed', event => {
     const assessment = event?.payload ?? event;
-    const record = memory.add({
+    const record = store({
       type: 'world-change',
       content: `World change on ${assessment.subject ?? 'unknown'} assessed as ${assessment.level}.`,
       importance: assessment.level === 'critical' ? 0.95 : assessment.level === 'relevant' ? 0.75 : 0.4,

@@ -44,6 +44,17 @@ assert(remembered?.id, 'memory creation failed');
 assert(core.searchMemory('smoke test memory').length > 0, 'memory retrieval failed');
 assert(persisted?.memories?.some(entry => entry.id === remembered.id), 'memory was not persisted');
 
+const task = await core.cognition.executeTaskGraph({
+  name: 'smoke dependency graph',
+  tasks: [
+    { id: 'remember', capabilityId: 'memory.remember', input: { content: 'Task graph memory.', type: 'fact', tags: ['smoke-task'] } },
+    { id: 'search', capabilityId: 'memory.search', dependsOn: ['remember'], input: { query: 'Task graph memory.', limit: 3 } },
+  ],
+});
+assert(task?.status === 'completed', `task orchestration ended in ${task?.status ?? 'missing'}`);
+assert(task.tasks?.every(step => step.status === 'success'), 'not every task graph step succeeded');
+assert(task.results?.search?.result?.lexical?.length > 0, 'dependent search task returned no memory');
+
 const cognition = await core.cognize('what is the system status?', { execute: false });
 assert(cognition?.status === 'planned' || cognition?.status === 'completed', `cognition ended in ${cognition?.status ?? 'missing'}`);
 assert(cognition?.plan?.intent === 'system_status', 'deterministic cognition fallback did not identify system status');
@@ -62,6 +73,7 @@ console.log(JSON.stringify({
   neurons: core.neural.stats().neurons,
   synapses: core.neural.stats().synapses,
   memories: core.memory.list({ limit: 100 }).length,
+  task: task.status,
   cognition: cognition.status,
   experienceRecorded: true,
 }, null, 2));

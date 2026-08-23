@@ -1,0 +1,54 @@
+name: Nova Verification
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=$(find . -type f -name '*.js' \
+            -not -path './.git/*' \
+            -not -path './node_modules/*' \
+            -not -path './dist/*')
+          if [ -z "$files" ]; then
+            echo 'No JavaScript files found.'
+            exit 0
+          fi
+          while IFS= read -r file; do
+            echo "Checking $file"
+            node --experimental-default-type=module --check "$file"
+          done <<< "$files"
+
+      - name: Verify critical Wulan files exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            wulan/core/index.js \
+            wulan/core/memory.js \
+            wulan/core/neural.js \
+            wulan/core/cognition.js \
+            wulan/core/persistence.js; do
+            test -f "$file"
+          done
+          echo 'Critical Wulan files present.'

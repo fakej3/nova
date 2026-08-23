@@ -14,6 +14,7 @@ import { createChangeTrail } from './change-trail.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 import { registerStrategyLab } from './strategy-lab.js';
 import { WulanPersistence, hydrateMemoryStore, restorePersistentState } from './persistence.js';
+import { createRuntimeHealth } from './runtime-health.js';
 
 export function createWulanCore({persistence}={}){
   const events=new WulanEventBus();
@@ -43,10 +44,13 @@ export function createWulanCore({persistence}={}){
     restorePersistentState(){return restorePersistentState(core,persistenceStore);}
   };
   const restoredState=core.restorePersistentState();
+  core.health=createRuntimeHealth(core);
   core.capabilities.register({id:'memory.search',name:'Memory Search',description:'Search Wulan memory using lexical retrieval and semantic retrieval when embeddings are available.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=8}={})=>{const text=String(query??'').trim();if(!text)return{lexical:[],semantic:[]};const lexical=core.searchMemory(text,{limit});let semanticHits=[];try{if(core.ai.status().available&&core.semantic.stats().entries>0)semanticHits=await core.searchSemanticMemory(text,{limit});}catch{}return{lexical,semantic:semanticHits};}});
   core.capabilities.register({id:'memory.remember',name:'Remember',description:'Store an explicit durable memory for Wulan.',risk:'write',permissions:['memory:write'],inputSchema:{content:'string',type:'string?',importance:'number?',tags:'string[]?'},execute:async({content,type='fact',importance=.7,tags=[]}={})=>{if(!String(content??'').trim())throw new Error('Memory content is required');return core.remember({content,type,importance,tags,source:'capability'});}});
   core.capabilities.register({id:'memory.experiences',name:'Experience Recall',description:'Retrieve Wulan cognition experiences relevant to a query.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=5}={})=>{const text=String(query??'').trim();if(!text)return[];const lexical=core.searchMemory(text,{limit:Math.max(limit*2,10)});return lexical.filter(({memory:entry})=>entry?.type==='experience'||entry?.source==='cognition'||entry?.tags?.includes?.('cognition-experience')).slice(0,limit);}});
   core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats(),world:world.snapshot(),persistence:{available:persistenceStore.available(),restoredMemoryCount,restoredState}})});
+  core.capabilities.register({id:'system.health',name:'Runtime Health',description:'Run read-only health checks across Wulan core, neural, memory, persistence, agents, integrations, capabilities and semantic memory.',risk:'read',permissions:['system:read'],execute:async({checks}={})=>core.health.check(Array.isArray(checks)?checks:undefined)});
+  core.capabilities.register({id:'system.repair',name:'Runtime Repair',description:'Safely restore missing baseline neural topology and boot a booting core without replacing existing state.',risk:'write',permissions:['system:repair'],inputSchema:{seedNeural:'boolean?',boot:'boolean?'},execute:async({seedNeural=true,boot=true}={})=>core.health.repair({seedNeural,boot})});
   const sentinelInspector=createSentinelInspector();
   core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
   core.capabilities.register({id:'world.change_assess',name:'Assess World Change',description:'Assess whether a detected world change is insignificant, relevant, or critical.',risk:'read',permissions:['world:read'],inputSchema:{event:'object'},execute:async({event}={})=>assessWorldChange(event)});

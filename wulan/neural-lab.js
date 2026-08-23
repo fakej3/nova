@@ -1,8 +1,10 @@
-import { createDefaultWulanCore } from './core/manifest.js';
-
 let core=null;
 let bootError=null;
-try{core=typeof window!=='undefined'&&window.WULAN_CORE?window.WULAN_CORE:createDefaultWulanCore();}catch(error){bootError=error;}
+try{
+  const {createDefaultWulanCore}=await import('./core/manifest.js');
+  core=typeof window!=='undefined'&&window.WULAN_CORE?window.WULAN_CORE:createDefaultWulanCore();
+  if(!core?.neural)throw new Error('Wulan core initialized without a neural substrate');
+}catch(error){bootError=error;}
 const persistence=core?.persistence??null;
 
 const canvas=document.querySelector('#neural');
@@ -21,9 +23,10 @@ const pointer={x:0,y:0,active:false};
 
 function showBootError(error){
   const message=String(error?.message||error||'Unknown neural runtime error');
-  if(traceEl)traceEl.innerHTML=`<b>Neural runtime unavailable.</b><br>${escapeHtml(message)}`;
+  if(traceEl)traceEl.innerHTML=`<b>Neural runtime unavailable.</b><br>${escapeHtml(message)}<br><small>Open DevTools → Console for the full error.</small>`;
   if(footer)footer.textContent='NEURAL RUNTIME ERROR';
   if(query?.querySelector('button'))query.querySelector('button').disabled=true;
+  if(input)input.disabled=true;
 }
 function seedBaseline(){
   if(!core?.neural)return;

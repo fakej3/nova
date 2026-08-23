@@ -40,6 +40,14 @@ function seedBaseline(){
     if(!core.neural.synapses?.has(reverse))core.neural.connect(id,'system:wulan-core',.2,1);
   }
 }
+function repairRuntime(){
+  if(!core?.health)return {repaired:false};
+  try{return core.health.repair({seedNeural:true,boot:true});}catch(error){console.warn('[Wulan] runtime repair failed',error);return {repaired:false,error};}
+}
+function inspectRuntime(){
+  if(!core?.health)return null;
+  try{return core.health.check();}catch(error){return {overall:'failed',checks:[{id:'health',status:'failed',message:error?.message??String(error)}]};}
+}
 function conceptTerms(text){
   const stop=new Set(['about','after','again','also','and','are','been','being','but','can','could','did','does','for','from','have','how','into','just','like','more','most','not','now','only','our','that','their','then','there','these','they','this','was','what','when','where','which','with','would','you','your','wulan']);
   return [...new Set(String(text??'').toLowerCase().replace(/[^a-z0-9_\- ]+/g,' ').replace(/\s+/g,' ').trim().split(' ').filter(word=>word.length>=3&&!stop.has(word)))].slice(0,24);
@@ -65,7 +73,13 @@ canvas?.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect(
 canvas?.addEventListener('pointerup',e=>{dragging=null;try{canvas.releasePointerCapture(e.pointerId);}catch{}});
 query?.addEventListener('submit',e=>{e.preventDefault();if(!core){showBootError(bootError);return;}const text=input.value.trim();if(!text)return;try{ensureQueryConcepts(text);core.neural.activate(text);persistence?.saveCore?.(core);layout();input.value='';}catch(error){showBootError(error);}});
 if(core){
+  const initialHealth=inspectRuntime();
+  if(initialHealth?.overall==='failed'||initialHealth?.checks?.some(check=>check.id==='neural'&&check.status!=='healthy'))repairRuntime();
   seedBaseline();
+  const finalHealth=inspectRuntime();
+  if(finalHealth?.overall==='failed')showBootError(new Error(finalHealth.checks?.find(check=>check.status==='failed')?.message||'Wulan runtime failed health checks'));
+  else if(traceEl&&finalHealth?.overall==='degraded')traceEl.innerHTML=`<b>Runtime degraded.</b><br>${finalHealth.checks.filter(check=>check.status!=='healthy').map(check=>escapeHtml(`${check.id}: ${check.message}`)).join('<br>')}`;
+  if(typeof window!=='undefined')window.WULAN_NEURAL_LAB_READY={health:finalHealth,core};
   persistence?.saveCore?.(core);
   layout();
   resize();

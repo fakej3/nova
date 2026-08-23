@@ -83,217 +83,42 @@ import { LIVING_STATES, WulanLivingState, WulanLocalPersistence } from './wulan/
     bg.addColorStop(.38, `rgba(68,92,180,${.02 + e * .025})`);
     bg.addColorStop(1, 'transparent');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-
-    particles.forEach((p) => {
-      p.a += .0007 * p.speed * (visualState.state === LIVING_STATES.THINKING ? 3.5 : 1);
-      const pt = organicPoint(p.a, p.r + Math.sin(t * .34 + p.phase) * (.035 + e * .02), p.phase);
-      const d = Math.hypot(pt.x - pointer.x, pt.y - pointer.y);
-      const attraction = pointer.active ? Math.max(0, 1 - d / (size * (.3 + e * .18))) : 0;
-      const pulse = (Math.sin(t * (.8 + p.speed) + p.phase) + 1) / 2;
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, p.size * (.65 + pulse * .75 + attraction * 1.7), 0, 6.283);
-      ctx.fillStyle = `rgba(167,226,255,${.025 + e * .07 + attraction * .22})`; ctx.fill();
-    });
-
+    particles.forEach((p) => { p.a += .0007 * p.speed * (visualState.state === LIVING_STATES.THINKING ? 3.5 : 1); const pt = organicPoint(p.a, p.r + Math.sin(t * .34 + p.phase) * (.035 + e * .02), p.phase); const d = Math.hypot(pt.x - pointer.x, pt.y - pointer.y); const attraction = pointer.active ? Math.max(0, 1 - d / (size * (.3 + e * .18))) : 0; const pulse = (Math.sin(t * (.8 + p.speed) + p.phase) + 1) / 2; ctx.beginPath(); ctx.arc(pt.x, pt.y, p.size * (.65 + pulse * .75 + attraction * 1.7), 0, 6.283); ctx.fillStyle = `rgba(167,226,255,${.025 + e * .07 + attraction * .22})`; ctx.fill(); });
     tendrils.forEach((th, i) => drawTendril(th, i, e));
-
-    sparks.forEach((s) => {
-      s.a += .002 * s.speed * (visualState.state === LIVING_STATES.THINKING ? 2.8 : 1 + e);
-      const pt = organicPoint(s.a, s.r + Math.sin(t * .8 + s.phase) * .035, s.phase);
-      const glow = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 9 + e * 8);
-      glow.addColorStop(0, `rgba(205,248,255,${.45 + e * .3})`); glow.addColorStop(1, 'transparent');
-      ctx.fillStyle = glow; ctx.fillRect(pt.x - 14, pt.y - 14, 28, 28);
-      ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.1 + e * 1.1, 0, 6.283); ctx.fillStyle = '#c9f6ff'; ctx.fill();
-    });
-
-    // The field contracts/expands with attention. There is intentionally no static orbit diagram.
-    for (let layer = 0; layer < 5; layer++) {
-      ctx.beginPath();
-      for (let i = 0; i <= 150; i++) {
-        const a = i / 150 * 6.283;
-        const base = .12 + layer * .055 + visualState.attention * .018;
-        const wob = .028 * Math.sin(a * (3 + layer * .7) + t * (.5 + layer * .08)) + .017 * Math.sin(a * 8 - t * .32 + layer);
-        const rr = base + wob;
-        const x = q.x + Math.cos(a) * size * .55 * rr / .18;
-        const y = q.y + Math.sin(a) * size * .38 * rr / .18;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = `rgba(105,205,255,${.018 + e * .032 - layer * .002})`;
-      ctx.lineWidth = .55; ctx.stroke();
-    }
-
-    // A breathing field instead of a literal orb.
-    const coreR = size * (.043 + e * .016);
-    const glow = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, coreR * 5);
-    glow.addColorStop(0, `rgba(125,225,255,${.11 + e * .15})`);
-    glow.addColorStop(.3, `rgba(95,143,255,${.055 + e * .08})`);
-    glow.addColorStop(1, 'transparent');
-    ctx.fillStyle = glow; ctx.fillRect(q.x - coreR * 5, q.y - coreR * 5, coreR * 10, coreR * 10);
-
-    for (let k = 0; k < 4; k++) {
-      ctx.beginPath();
-      for (let i = 0; i <= 90; i++) {
-        const a = i / 90 * 6.283;
-        const wob = Math.sin(a * (4 + k) + t * (.7 + k * .2)) * coreR * (.18 + e * .08) + Math.cos(a * 7 - t) * coreR * .1;
-        const rr = coreR * (.55 + k * .16) + wob;
-        const x = q.x + Math.cos(a + t * (.03 + k * .01)) * rr;
-        const y = q.y + Math.sin(a - t * (.04 + k * .015)) * rr * (.62 + visualState.attention * .18);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.strokeStyle = `rgba(169,239,255,${.09 + k * .025 + e * .08})`;
-      ctx.lineWidth = 1 - k * .13; ctx.stroke();
-    }
-
-    const dot = 2 + e * 2.8 + Math.min(pointer.velocity * .006, 2);
-    ctx.beginPath(); ctx.arc(q.x + Math.sin(t * .8) * 2, q.y + Math.cos(t * .65) * 2, dot, 0, 6.283);
-    ctx.fillStyle = '#e6fbff'; ctx.shadowBlur = 26 + e * 18; ctx.shadowColor = '#72e8ff'; ctx.fill(); ctx.shadowBlur = 0;
-
+    sparks.forEach((s) => { s.a += .002 * s.speed * (visualState.state === LIVING_STATES.THINKING ? 2.8 : 1 + e); const pt = organicPoint(s.a, s.r + Math.sin(t * .8 + s.phase) * .035, s.phase); const glow = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 9 + e * 8); glow.addColorStop(0, `rgba(205,248,255,${.45 + e * .3})`); glow.addColorStop(1, 'transparent'); ctx.fillStyle = glow; ctx.fillRect(pt.x - 14, pt.y - 14, 28, 28); ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.1 + e * 1.1, 0, 6.283); ctx.fillStyle = '#c9f6ff'; ctx.fill(); });
+    for (let layer = 0; layer < 5; layer++) { ctx.beginPath(); for (let i = 0; i <= 150; i++) { const a = i / 150 * 6.283; const base = .12 + layer * .055 + visualState.attention * .018; const wob = .028 * Math.sin(a * (3 + layer * .7) + t * (.5 + layer * .08)) + .017 * Math.sin(a * 8 - t * .32 + layer); const rr = base + wob; const x = q.x + Math.cos(a) * size * .55 * rr / .18; const y = q.y + Math.sin(a) * size * .38 * rr / .18; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.strokeStyle = `rgba(105,205,255,${.018 + e * .032 - layer * .002})`; ctx.lineWidth = .55; ctx.stroke(); }
+    const coreR = size * (.043 + e * .016); const glow = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, coreR * 5); glow.addColorStop(0, `rgba(125,225,255,${.11 + e * .15})`); glow.addColorStop(.3, `rgba(95,143,255,${.055 + e * .08})`); glow.addColorStop(1, 'transparent'); ctx.fillStyle = glow; ctx.fillRect(q.x - coreR * 5, q.y - coreR * 5, coreR * 10, coreR * 10);
+    for (let k = 0; k < 4; k++) { ctx.beginPath(); for (let i = 0; i <= 90; i++) { const a = i / 90 * 6.283; const wob = Math.sin(a * (4 + k) + t * (.7 + k * .2)) * coreR * (.18 + e * .08) + Math.cos(a * 7 - t) * coreR * .1; const rr = coreR * (.55 + k * .16) + wob; const x = q.x + Math.cos(a + t * (.03 + k * .01)) * rr; const y = q.y + Math.sin(a - t * (.04 + k * .015)) * rr * (.62 + visualState.attention * .18); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.strokeStyle = `rgba(169,239,255,${.09 + k * .025 + e * .08})`; ctx.lineWidth = 1 - k * .13; ctx.stroke(); }
+    const dot = 2 + e * 2.8 + Math.min(pointer.velocity * .006, 2); ctx.beginPath(); ctx.arc(q.x + Math.sin(t * .8) * 2, q.y + Math.cos(t * .65) * 2, dot, 0, 6.283); ctx.fillStyle = '#e6fbff'; ctx.shadowBlur = 26 + e * 18; ctx.shadowColor = '#72e8ff'; ctx.fill(); ctx.shadowBlur = 0;
     requestAnimationFrame(draw); t += .012;
   }
   draw();
 
   presence.classList.add('canvas-presence');
+  const copy = { idle:["I'm here.",'quiet · aware · waiting'], listening:["I'm listening.",'with you · right now'], thinking:["Let me think.",'connecting what I know'], remembering:["I remember.",'looking through memory'], acting:["On it.",'working on your request'], learning:["I'm learning.",'feedback becomes experience'], error:["Something broke.",'recovering safely'] };
+  living.subscribe((next) => { visualState = next; const words = copy[next.state] ?? copy.idle; presenceText.textContent = next.state.toUpperCase(); activityState.textContent = next.state.toUpperCase(); activityLine.textContent = next.activity; headline.textContent = words[0]; subline.textContent = words[1]; presence.classList.toggle('active', next.state === 'listening' || next.state === 'acting'); presence.classList.toggle('thinking', next.state === 'thinking' || next.state === 'learning'); });
 
-  const copy = {
-    idle: ["I'm here.", 'quiet · aware · waiting'],
-    listening: ["I'm listening.", 'with you · right now'],
-    thinking: ["Let me think.", 'connecting what I know'],
-    remembering: ["I remember.", 'looking through memory'],
-    acting: ["On it.", 'working on your request'],
-    learning: ["I'm learning.", 'feedback becomes experience'],
-    error: ["Something broke.", 'recovering safely']
-  };
-
-  living.subscribe((next) => {
-    visualState = next;
-    const words = copy[next.state] ?? copy.idle;
-    presenceText.textContent = next.state.toUpperCase();
-    activityState.textContent = next.state.toUpperCase();
-    activityLine.textContent = next.activity;
-    headline.textContent = words[0];
-    subline.textContent = words[1];
-    presence.classList.toggle('active', next.state === 'listening' || next.state === 'acting');
-    presence.classList.toggle('thinking', next.state === 'thinking' || next.state === 'learning');
-  });
-
-  function addMessage(who, text) {
-    const el = document.createElement('div'); el.className = `message ${who}`;
-    const name = document.createElement('span'); name.className = 'message-name'; name.textContent = who === 'user' ? 'YOU' : 'WULAN';
-    const p = document.createElement('p'); p.textContent = text; el.append(name, p); messages.appendChild(el); messages.scrollTop = messages.scrollHeight;
-  }
-
-  function memoryCount() {
-    return core.memory.list({ limit: 5000 }).length;
-  }
-
+  function addMessage(who, text) { const el = document.createElement('div'); el.className = `message ${who}`; const name = document.createElement('span'); name.className = 'message-name'; name.textContent = who === 'user' ? 'YOU' : 'WULAN'; const p = document.createElement('p'); p.textContent = text; el.append(name, p); messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
+  function memoryCount() { return core.memory.list({ limit: 5000 }).length; }
   function save() { persistence.save(core); }
-
-  function rememberConversation(text) {
-    const entry = core.remember({
-      content: text,
-      type: 'experience',
-      source: 'conversation',
-      importance: .35,
-      tags: ['conversation', 'session']
-    });
-    memoryLabel.querySelector('b').textContent = String(memoryCount());
-    memoryHint.textContent = `memory · ${memoryCount()} stored`;
-    save();
-    return entry;
-  }
-
-  function localReply(text) {
-    const s = text.toLowerCase();
-    if (/hello|hi|hey|bro/.test(s)) return "Hey. I'm right here. What are we building?";
-    if (/who are you|what are you/.test(s)) return "I'm Wulan — the personal layer we're building around your tools, memory and future AI providers.";
-    if (/remember|memory/.test(s)) return memoryCount() ? `I have ${memoryCount()} private memories stored on this device.` : "Memory is ready. Tell me what you want me to keep.";
-    if (/sentinel/.test(s)) return "Sentinel is registered. When we connect it, Wulan will be able to notice its state instead of merely showing a card.";
-    if (/edgelab|edge lab/.test(s)) return "EdgeLab is registered. It can become another capability Wulan can reason over.";
-    if (/learn|learning/.test(s)) return "Learning is not pretending to be training. I'm recording explicit feedback and preferences now; later we can use those signals to influence model behavior.";
-    if (/project|build/.test(s)) return "I'm ready. Give me the next thing and I'll keep it in context.";
-    return `I heard you: “${text}”. My local core is online, but no production model is connected yet.`;
-  }
+  function rememberConversation(text) { const entry = core.remember({content:text,type:'experience',source:'conversation',importance:.35,tags:['conversation','session']}); memoryLabel.querySelector('b').textContent = String(memoryCount()); memoryHint.textContent = `memory · ${memoryCount()} stored`; save(); return entry; }
+  function localReply(text) { const s = text.toLowerCase(); if (/hello|hi|hey|bro/.test(s)) return "Hey. I'm right here. What are we building?"; if (/who are you|what are you/.test(s)) return "I'm Wulan — the personal layer we're building around your tools, memory and future AI providers."; if (/remember|memory/.test(s)) return memoryCount() ? `I have ${memoryCount()} private memories stored on this device.` : "Memory is ready. Tell me what you want me to keep."; if (/sentinel/.test(s)) return "Sentinel is registered. Wulan can inspect its state when the integration is invoked."; if (/strategy.?lab|strategy labs/.test(s)) return "Strategy Lab is registered. Wulan can inspect its research state when the integration is invoked."; if (/learn|learning/.test(s)) return "Learning is recording explicit feedback and experience; later those signals can influence routing and behavior."; if (/project|build/.test(s)) return "I'm ready. Give me the next thing and I'll keep it in context."; return `I heard you: “${text}”. My local core is online, and I will use the configured provider when it is available.`; }
 
   async function sendMessage(text) {
     text = text.trim(); if (!text) return;
-    addMessage('user', text);
-    core.events.emit(WULAN_EVENTS.USER_MESSAGE, { text });
-    living.transition(LIVING_STATES.THINKING, { reason: 'user_message', activity: 'connecting your message to context' });
-    rememberConversation(text);
-    await new Promise(r => setTimeout(r, 280 + Math.random() * 420));
-
-    let reply;
-    try {
-      reply = await core.ai.generate({ messages: [{ role: 'user', content: text }], system: 'You are Wulan, a private personal AI OS. Be concise, warm and honest about what you can actually do.' });
-    } catch {
-      reply = localReply(text);
-    }
-
-    living.transition(LIVING_STATES.ACTING, { reason: 'response_ready', activity: 'responding to you' });
-    await new Promise(r => setTimeout(r, 140));
-    addMessage('wulan', typeof reply === 'string' ? reply : (reply?.text || reply?.content || localReply(text)));
-    core.recordFeedback({ outcome: 'accepted', context: text, candidatePreference: null, source: 'conversation', confidence: .35 });
-    living.transition(LIVING_STATES.LEARNING, { reason: 'conversation_feedback', activity: 'keeping the useful signal' });
-    save();
-    living.decayToIdle(900);
-    input.focus();
+    addMessage('user', text); core.events.emit(WULAN_EVENTS.USER_MESSAGE, { text }); living.transition(LIVING_STATES.THINKING, { reason: 'user_message', activity: 'connecting your message to context' }); rememberConversation(text); await new Promise(r => setTimeout(r, 280 + Math.random() * 420));
+    let reply; try { reply = await core.ai.generate({ messages:[{role:'user',content:text}], system:'You are Wulan, a private personal AI OS. Be concise, warm and honest about what you can actually do.' }); } catch { reply = localReply(text); }
+    living.transition(LIVING_STATES.ACTING, { reason:'response_ready', activity:'responding to you' }); await new Promise(r => setTimeout(r,140)); addMessage('wulan', typeof reply === 'string' ? reply : (reply?.text || reply?.content || localReply(text))); core.recordFeedback({outcome:'accepted',context:text,candidatePreference:null,source:'conversation',confidence:.35}); living.transition(LIVING_STATES.LEARNING, {reason:'conversation_feedback',activity:'keeping the useful signal'}); save(); living.decayToIdle(900); input.focus();
   }
-
   composer.addEventListener('submit', e => { e.preventDefault(); const text = input.value; input.value = ''; sendMessage(text); });
-
-  presence.addEventListener('click', () => {
-    living.transition(LIVING_STATES.LISTENING, { reason: 'presence_interaction', focus: 'you', activity: 'listening to you' });
-    input.focus();
-    living.decayToIdle(3000);
-  });
-
-  document.addEventListener('pointermove', e => {
-    const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
-    pointer.velocity = Math.hypot(dx, dy);
-    pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true;
-    if (!lastPointer || pointer.velocity > 45) living.pulse({ attention: Math.min(1, living.attention + .025), focus: 'environment' });
-    lastPointer = { x: e.clientX, y: e.clientY };
-  });
-  document.addEventListener('pointerleave', () => { pointer.active = false; pointer.velocity = 0; });
-
-  voice.addEventListener('click', () => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { addMessage('wulan', 'Voice input is not available in this browser. Text is ready.'); return; }
-    const rec = new SR(); rec.lang = navigator.language || 'en-IN'; rec.interimResults = false;
-    living.transition(LIVING_STATES.LISTENING, { reason: 'voice_input', activity: 'listening to your voice' });
-    rec.onresult = e => { input.value = e.results[0][0].transcript; const text = input.value; input.value = ''; sendMessage(text); };
-    rec.onerror = () => living.transition(LIVING_STATES.IDLE, { reason: 'voice_error', activity: 'Listening for you.' });
-    rec.onend = () => { if (living.state === LIVING_STATES.LISTENING) living.transition(LIVING_STATES.IDLE, { reason: 'voice_end', activity: 'Listening for you.' }); };
-    rec.start();
-  });
-
-  document.querySelectorAll('.quick button').forEach(btn => btn.addEventListener('click', () => {
-    const a = btn.dataset.action;
-    const lines = {
-      memory: `Memory is awake. ${memoryCount()} private memories are stored locally.`,
-      agents: 'Four agents are registered: Atlas, Leon, Oracle and Pixel.',
-      projects: 'Projects are context. They will become things Wulan can act on, not another dashboard.',
-      systems: 'Sentinel, EdgeLab and GitHub are registered integrations.'
-    };
-    addMessage('wulan', lines[a]);
-    living.transition(LIVING_STATES.REMEMBERING, { reason: `open_${a}`, focus: a, activity: `${a} context surfaced` });
-    living.decayToIdle(1600);
-  }));
-
-  core.events.on(WULAN_EVENTS.SYSTEM_READY, () => {
-    activityLine.textContent = 'Core online. I am ready.';
-    providerHint.textContent = core.ai.listProviders().length ? 'AI gateway · connected' : 'AI gateway · waiting for provider';
-  });
-
-  const restored = persistence.load(core);
+  presence.addEventListener('click', () => { living.transition(LIVING_STATES.LISTENING, { reason:'presence_interaction', focus:'you', activity:'listening to you' }); input.focus(); living.decayToIdle(3000); });
+  document.addEventListener('pointermove', e => { const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y; pointer.velocity=Math.hypot(dx,dy); pointer.x=e.clientX; pointer.y=e.clientY; pointer.active=true; if(!lastPointer||pointer.velocity>45)living.pulse({attention:Math.min(1,living.attention+.025),focus:'environment'}); lastPointer={x:e.clientX,y:e.clientY}; });
+  document.addEventListener('pointerleave', () => { pointer.active=false; pointer.velocity=0; });
+  voice.addEventListener('click', () => { const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){addMessage('wulan','Voice input is not available in this browser. Text is ready.');return;} const rec=new SR(); rec.lang=navigator.language||'en-IN'; rec.interimResults=false; living.transition(LIVING_STATES.LISTENING,{reason:'voice_input',activity:'listening to your voice'}); rec.onresult=e=>{input.value=e.results[0][0].transcript;const text=input.value;input.value='';sendMessage(text);}; rec.onerror=()=>living.transition(LIVING_STATES.IDLE,{reason:'voice_error',activity:'Listening for you.'}); rec.onend=()=>{if(living.state===LIVING_STATES.LISTENING)living.transition(LIVING_STATES.IDLE,{reason:'voice_end',activity:'Listening for you.'});}; rec.start(); });
+  document.querySelectorAll('.quick button').forEach(btn => btn.addEventListener('click', () => { const a=btn.dataset.action; const lines={memory:`Memory is awake. ${memoryCount()} private memories are stored locally.`,agents:'Four agents are registered: Atlas, Leon, Oracle and Pixel.',projects:'Projects are context. They will become things Wulan can act on, not another dashboard.',systems:'Sentinel, Strategy Lab and GitHub are registered integrations.'}; addMessage('wulan',lines[a]??'That control is not wired yet.'); living.transition(LIVING_STATES.REMEMBERING,{reason:`open_${a}`,focus:a,activity:`${a} context surfaced`}); living.decayToIdle(1600); }));
+  core.events.on(WULAN_EVENTS.SYSTEM_READY, () => { activityLine.textContent='Core online. I am ready.'; providerHint.textContent=core.ai.listProviders().length?'AI gateway · connected':'AI gateway · waiting for provider'; });
   core.boot();
-  memoryLabel.querySelector('b').textContent = String(memoryCount());
-  agentsLabel.querySelector('b').textContent = String(core.state.agents.size);
-  memoryHint.textContent = restored.memories ? `memory · ${restored.memories} restored` : 'memory · ready';
-  setInterval(save, 15000);
-
-  const clock = $('#clock');
-  const tick = () => clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  tick(); setInterval(tick, 1000);
+  memoryLabel.querySelector('b').textContent=String(memoryCount()); agentsLabel.querySelector('b').textContent=String(core.state.agents.size); memoryHint.textContent='memory · ready';
+  setInterval(save,15000);
+  const clock=$('#clock'); const tick=()=>clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); tick(); setInterval(tick,1000);
 })();

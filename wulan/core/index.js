@@ -10,6 +10,7 @@ import { WulanWorldModel, seedWulanWorld } from './world.js';
 import { createObservationIngestor } from './observation.js';
 import { connectWorldReconciliation } from './reconciliation-events.js';
 import { assessWorldChange, connectChangeSignificance } from './change-significance.js';
+import { createChangeTrail } from './change-trail.js';
 import { createSentinelInspector } from '../integrations/sentinel.js';
 import { registerStrategyLab } from './strategy-lab.js';
 
@@ -37,8 +38,8 @@ export function createWulanCore(){
     consolidateNeural(options={}){const result=neural.consolidate(options);events.emit(WULAN_EVENTS.NEURAL_UPDATED,{reason:'consolidation',...result});return result;},
     boot(){if(state.status==='ready')return state;neural.consolidate();state.status='ready';events.emit(WULAN_EVENTS.SYSTEM_READY,{agents:[...state.agents.keys()],integrations:[...state.integrations.keys()],neural:neural.stats(),semantic:semantic.stats(),world:{projects:world.listProjects().length,systems:world.listSystems().length}});return state;}
   };
-  core.capabilities.register({id:'memory.search',name:'Memory Search',description:'Search Wulan memories relevant to the current request.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=8}={})=>core.searchMemory(String(query??''),{limit})});
-  core.capabilities.register({id:'memory.remember',name:'Remember',description:'Store an explicit durable memory for Wulan.',risk:'write',permissions:['memory:write'],inputSchema:{content:'string',type:'string?',importance:'number?',tags:'string[]?'},execute:async({content,type='fact',importance=.7,tags=[]}={})=>core.remember({content,type,importance,tags,source:'capability'})});
+  core.capabilities.register({id:'memory.search',name:'Memory Search',description:'Search Wulan memory using lexical retrieval and semantic retrieval when embeddings are available.',risk:'read',permissions:['memory:read'],inputSchema:{query:'string',limit:'number?'},execute:async({query,limit=8}={})=>{const text=String(query??'').trim();if(!text)return{lexical:[],semantic:[]};const lexical=core.searchMemory(text,{limit});let semanticHits=[];try{if(core.ai.status().available&&core.semantic.stats().entries>0)semanticHits=await core.searchSemanticMemory(text,{limit});}catch{}return{lexical,semantic:semanticHits};}});
+  core.capabilities.register({id:'memory.remember',name:'Remember',description:'Store an explicit durable memory for Wulan.',risk:'write',permissions:['memory:write'],inputSchema:{content:'string',type:'string?',importance:'number?',tags:'string[]?'},execute:async({content,type='fact',importance=.7,tags=[]}={})=>{if(!String(content??'').trim())throw new Error('Memory content is required');return core.remember({content,type,importance,tags,source:'capability'});}});
   core.capabilities.register({id:'system.status',name:'System Status',description:'Inspect Wulan runtime and subsystem status.',risk:'read',permissions:['system:read'],execute:async()=>({status:state.status,agents:[...state.agents.values()],integrations:[...state.integrations.values()],capabilities:capabilities.list(),neural:neural.stats(),semantic:semantic.stats(),world:world.snapshot()})});
   const sentinelInspector=createSentinelInspector();
   core.capabilities.register({id:'sentinel.inspect',name:'Inspect Sentinel',description:'Read-only inspection of the Sentinel GitHub repository and its Vercel project.',risk:'read',permissions:['github:read','vercel:read'],inputSchema:{repo:'string?',branch:'string?',paths:'string[]?'},execute:async(input={})=>sentinelInspector(input)});
@@ -46,10 +47,7 @@ export function createWulanCore(){
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.cognize=(input,options={})=>core.cognition.run(input,options);
-  events.on('world.change_assessed',event=>{
-    if(!event.payload?.shouldReason)return;
-    const {level,source,subject,totalChanges,fields}=event.payload;
-    void core.cognize(`World change detected (${level}) for ${subject ?? source ?? 'unknown'}: ${totalChanges} changed field(s). Fields: ${fields.join(', ')}`,{execute:false,context:{trigger:'world-change',severity:level,source,subject}});
-  });
+  core.changeTrail=createChangeTrail({memory,remember:core.remember,events});
+  events.on('world.change_assessed',event=>{if(!event.payload?.shouldReason)return;const {level,source,subject,totalChanges,fields}=event.payload;void core.cognize(`World change detected (${level}) for ${subject ?? source ?? 'unknown'}: ${totalChanges} changed field(s). Fields: ${fields.join(', ')}`,{execute:false,context:{trigger:'world-change',severity:level,source,subject}});});
   return core;
 }

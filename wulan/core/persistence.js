@@ -1,4 +1,4 @@
-const STORAGE_KEY='nova.wulan.memory.v1';
+const STORAGE_KEY='wulan-local-v2';
 
 export class WulanPersistence {
   constructor({storage, key=STORAGE_KEY}={}){
@@ -12,17 +12,20 @@ export class WulanPersistence {
       const raw=this.storage.getItem(this.key);
       if(!raw)return null;
       const parsed=JSON.parse(raw);
-      if(!parsed||parsed.version!==1||!Array.isArray(parsed.memories))return null;
+      if(!parsed||![1,3,4].includes(parsed.version)||!Array.isArray(parsed.memories))return null;
       return parsed;
     }catch{return null;}
   }
-  save({memories=[]}={}){
+  save(input={}){
     if(!this.available())return false;
     try{
-      this.storage.setItem(this.key,JSON.stringify({version:1,savedAt:new Date().toISOString(),memories}));
+      const core=input?.core;
+      const payload=core?{version:4,savedAt:new Date().toISOString(),memories:core.memory?.list?.({limit:core.memory.maxEntries??5000})??[],learning:core.learning?.recent?.(5000)??[],neural:core.neural?.exportState?.()??null,semantic:core.semantic?.exportState?.()??null}:{version:4,savedAt:new Date().toISOString(),memories:Array.isArray(input.memories)?input.memories:[],learning:Array.isArray(input.learning)?input.learning:[],neural:input.neural??null,semantic:input.semantic??null};
+      this.storage.setItem(this.key,JSON.stringify(payload));
       return true;
     }catch{return false;}
   }
+  saveCore(core){return this.save({core});}
   clear(){if(!this.available())return false;try{this.storage.removeItem(this.key);return true;}catch{return false;}}
 }
 
@@ -30,10 +33,19 @@ export function hydrateMemoryStore(memory,persistence){
   const snapshot=persistence?.load?.();
   if(!snapshot?.memories?.length)return 0;
   let restored=0;
-  for(const entry of snapshot.memories){
-    try{memory.add(entry);restored++;}catch{}
-  }
+  for(const entry of snapshot.memories){try{memory.add(entry);restored++;}catch{}}
   return restored;
+}
+
+export function restorePersistentState(core,persistence){
+  const snapshot=persistence?.load?.();
+  if(!snapshot)return {learning:0,neural:false,semantic:false};
+  let learning=0;
+  for(const record of Array.isArray(snapshot.learning)?snapshot.learning:[]){try{core.learning?.record(record);learning++;}catch{}}
+  let neural=false,semantic=false;
+  if(snapshot.neural&&typeof core.neural?.importState==='function'){try{core.neural.importState(snapshot.neural);neural=true;}catch{}}
+  if(snapshot.semantic&&typeof core.semantic?.importState==='function'){try{core.semantic.importState(snapshot.semantic);semantic=true;}catch{}}
+  return {learning,neural,semantic};
 }
 
 export function persistMemoryStore(memory,persistence){

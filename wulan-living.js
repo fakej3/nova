@@ -1,11 +1,11 @@
 import { createDefaultWulanCore } from './wulan/core/manifest.js';
 import { WULAN_EVENTS } from './wulan/core/event-bus.js';
-import { LIVING_STATES, WulanLivingState, WulanLocalPersistence } from './wulan/core/living-state.js';
+import { LIVING_STATES, WulanLivingState } from './wulan/core/living-state.js';
 
 (() => {
-  const core = createDefaultWulanCore();
+  const core = typeof window !== 'undefined' && window.WULAN_CORE ? window.WULAN_CORE : createDefaultWulanCore();
   const living = new WulanLivingState();
-  const persistence = new WulanLocalPersistence();
+  const persistence = core?.persistence ?? null;
   const $ = (s) => document.querySelector(s);
   const canvas = $('#nova-canvas');
   const ctx = canvas.getContext('2d');
@@ -100,7 +100,7 @@ import { LIVING_STATES, WulanLivingState, WulanLocalPersistence } from './wulan/
 
   function addMessage(who, text) { const el = document.createElement('div'); el.className = `message ${who}`; const name = document.createElement('span'); name.className = 'message-name'; name.textContent = who === 'user' ? 'YOU' : 'WULAN'; const p = document.createElement('p'); p.textContent = text; el.append(name, p); messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
   function memoryCount() { return core.memory.list({ limit: 5000 }).length; }
-  function save() { persistence.save(core); }
+  function save() { persistence?.saveCore?.(core); }
   function rememberConversation(text) { const entry = core.remember({content:text,type:'experience',source:'conversation',importance:.35,tags:['conversation','session']}); memoryLabel.querySelector('b').textContent = String(memoryCount()); memoryHint.textContent = `memory · ${memoryCount()} stored`; save(); return entry; }
   function localReply(text) { const s = text.toLowerCase(); if (/hello|hi|hey|bro/.test(s)) return "Hey. I'm right here. What are we building?"; if (/who are you|what are you/.test(s)) return "I'm Wulan — the personal layer we're building around your tools, memory and future AI providers."; if (/remember|memory/.test(s)) return memoryCount() ? `I have ${memoryCount()} private memories stored on this device.` : "Memory is ready. Tell me what you want me to keep."; if (/sentinel/.test(s)) return "Sentinel is registered. Wulan can inspect its state when the integration is invoked."; if (/strategy.?lab|strategy labs/.test(s)) return "Strategy Lab is registered. Wulan can inspect its research state when the integration is invoked."; if (/learn|learning/.test(s)) return "Learning is recording explicit feedback and experience; later those signals can influence routing and behavior."; if (/project|build/.test(s)) return "I'm ready. Give me the next thing and I'll keep it in context."; return `I heard you: “${text}”. My local core is online, and I will use the configured provider when it is available.`; }
 

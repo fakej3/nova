@@ -1,8 +1,9 @@
 import { createDefaultWulanCore } from './core/manifest.js';
 
-const core=typeof window!=='undefined'&&window.WULAN_CORE?window.WULAN_CORE:createDefaultWulanCore();
-const persistence=core?.persistence??null;
+let core=null;
 let bootError=null;
+try{core=typeof window!=='undefined'&&window.WULAN_CORE?window.WULAN_CORE:createDefaultWulanCore();}catch(error){bootError=error;}
+const persistence=core?.persistence??null;
 
 const canvas=document.querySelector('#neural');
 const ctx=canvas?.getContext('2d');
@@ -30,8 +31,10 @@ function seedBaseline(){
   for(const agent of core.state?.agents?.values?.()??[]){
     const id=`agent:${agent.id}`;
     core.neural.ensureNeuron({id,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});
-    core.neural.connect('system:wulan-core',id,.28,1);
-    core.neural.connect(id,'system:wulan-core',.2,1);
+    const forward=`system:wulan-core>${id}`;
+    const reverse=`${id}>system:wulan-core`;
+    if(!core.neural.synapses?.has(forward))core.neural.connect('system:wulan-core',id,.28,1);
+    if(!core.neural.synapses?.has(reverse))core.neural.connect(id,'system:wulan-core',.2,1);
   }
 }
 function conceptTerms(text){
@@ -41,12 +44,12 @@ function conceptTerms(text){
 function ensureQueryConcepts(text){
   const terms=conceptTerms(text);
   const neurons=terms.map(term=>core.neural.ensureNeuron({id:`concept:${term}`,label:term,type:'concept',strength:.4,tags:['activated']}));
-  for(let i=0;i<neurons.length;i++)for(let j=i+1;j<neurons.length;j++)core.neural.connect(neurons[i].id,neurons[j].id,.2,.25);
+  for(let i=0;i<neurons.length;i++)for(let j=i+1;j<neurons.length;j++){const edge=`${neurons[i].id}>${neurons[j].id}`;if(!core.neural.synapses?.has(edge))core.neural.connect(neurons[i].id,neurons[j].id,.2,.25);}
 }
 function resize(){if(!canvas||!ctx)return;dpr=Math.min(devicePixelRatio||1,2);const rect=canvas.getBoundingClientRect();width=rect.width;height=rect.height;canvas.width=width*dpr;canvas.height=height*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);layout();}
 function groupOf(type){return type==='agent'?0:type==='memory'?1:2;}
 function layout(){if(!core?.neural)return;const snap=core.neural.snapshot({limit:100});nodes=snap.neurons.map(n=>{const group=groupOf(n.type),groupNodes=snap.neurons.filter(x=>groupOf(x.type)===group),localIndex=groupNodes.findIndex(x=>x.id===n.id),radius=Math.min(width,height)*([.23,.31,.39][group]);const angle=(localIndex/Math.max(1,groupNodes.length))*Math.PI*2+group*.55;return{...n,x:width/2+Math.cos(angle)*radius,y:height/2+Math.sin(angle)*radius*.62,vx:0,vy:0};});const map=new Map(nodes.map(n=>[n.id,n]));edges=snap.synapses.map(e=>({...e,a:map.get(e.source),b:map.get(e.target)})).filter(e=>e.a&&e.b);renderStats(snap);}
-function renderStats(snap){const s=core.neural.stats();stats.neurons.textContent=s.neurons;stats.synapses.textContent=s.synapses;stats.updates.textContent=s.updates;footer.textContent=`${snap.trace.length} active pathways · ${s.concepts} concepts · ${s.memories} memories`;traceEl.innerHTML=snap.trace.length?snap.trace.slice(0,8).map(n=>`<b>${escapeHtml(n.label)}</b> · ${n.type} · ${Math.round(n.activation*100)}%`).join('<br>'):'No activation yet.';}
+function renderStats(snap){const s=core.neural.stats();if(stats.neurons)stats.neurons.textContent=s.neurons;if(stats.synapses)stats.synapses.textContent=s.synapses;if(stats.updates)stats.updates.textContent=s.updates;if(footer)footer.textContent=`${snap.trace.length} active pathways · ${s.concepts} concepts · ${s.memories} memories`;if(traceEl)traceEl.innerHTML=snap.trace.length?snap.trace.slice(0,8).map(n=>`<b>${escapeHtml(n.label)}</b> · ${n.type} · ${Math.round(n.activation*100)}%`).join('<br>'):'No activation yet.';}
 function escapeHtml(value){return String(value).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function color(n){return n.type==='agent'?'#e5c36d':n.type==='memory'?'#6df0b2':'#72e8ff';}
 function relax(){for(let i=0;i<10;i++){for(const a of nodes){a.vx*=.88;a.vy*=.88;}for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1;if(d<55){const f=(55-d)/55*.35;a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f;}}for(const e of edges){const a=e.a,b=e.b,dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,target=110+(1-e.weight)*100,f=(d-target)/target*.012;a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f;}for(const n of nodes){n.x=Math.max(40,Math.min(width-40,n.x+n.vx));n.y=Math.max(40,Math.min(height-40,n.y+n.vy));}}}
@@ -60,6 +63,7 @@ canvas?.addEventListener('pointerup',e=>{dragging=null;try{canvas.releasePointer
 query?.addEventListener('submit',e=>{e.preventDefault();if(!core){showBootError(bootError);return;}const text=input.value.trim();if(!text)return;try{ensureQueryConcepts(text);core.neural.activate(text);persistence?.saveCore?.(core);layout();input.value='';}catch(error){showBootError(error);}});
 if(core){
   seedBaseline();
+  persistence?.saveCore?.(core);
   layout();
   resize();
   render();

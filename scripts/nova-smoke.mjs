@@ -29,6 +29,23 @@ const health = core.health?.check?.();
 assert(health?.overall === 'healthy', `runtime health is ${health?.overall ?? 'missing'}`);
 assert(core.neural.stats().neurons >= 5, 'baseline neural topology was not created');
 assert(core.neural.stats().synapses >= 8, 'baseline neural topology has too few synapses');
+assert(core.agentRuntime?.list?.().length === 4, 'agent runtime did not expose all registered agents');
+
+core.agentRuntime.configure('leon', { capabilities: ['memory.remember', 'memory.search'] });
+const agentRun = await core.agentRuntime.assign('leon', {
+  name: 'agent smoke assignment',
+  tasks: [
+    { id: 'remember', capabilityId: 'memory.remember', input: { content: 'Agent runtime memory.', type: 'fact', tags: ['smoke-agent'] } },
+    { id: 'search', capabilityId: 'memory.search', dependsOn: ['remember'], input: { query: 'Agent runtime memory.', limit: 3 } },
+  ],
+});
+assert(agentRun.status === 'completed', `agent assignment ended in ${agentRun.status}`);
+assert(core.agentRuntime.get('leon')?.status === 'idle', 'agent did not return to idle after completion');
+assert(agentRun.result?.results?.search?.result?.lexical?.length > 0, 'agent dependent search returned no memory');
+
+let denied = false;
+try { await core.agentRuntime.assign('leon', { name: 'denied assignment', tasks: [{ id: 'status', capabilityId: 'system.status', input: {} }] }); } catch (error) { denied = String(error?.message).includes('AGENT_CAPABILITY_DENIED'); }
+assert(denied, 'agent capability boundary did not reject an unauthorized capability');
 
 const remembered = core.remember({ content: 'Nova smoke test memory survives persistence.', type: 'fact', importance: 0.8, tags: ['smoke-test'] });
 assert(remembered?.id, 'memory creation failed');
@@ -66,4 +83,4 @@ assert(restored.cognition.orchestrator.get(task.id)?.status === 'completed', 'co
 const restoredHealth = restored.health?.check?.(['memory', 'persistence']);
 assert(restoredHealth?.overall !== 'failed', 'restored core has a failed memory/persistence health check');
 
-console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, experienceRecorded: true }, null, 2));
+console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, experienceRecorded: true }, null, 2));

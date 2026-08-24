@@ -48,7 +48,7 @@ const team = await core.agentSupervisor.coordinate({
   name: 'multi-agent smoke team',
   tasks: [
     { id: 'research', agentId: 'atlas', capabilityId: 'memory.remember', input: { content: 'Team research result.', type: 'fact', tags: ['smoke-team'] } },
-    { id: 'verify', agentId: 'leon', capabilityId: 'memory.search', dependsOn: ['research'], input: { query: '$result.research.result', limit: 3 } },
+    { id: 'verify', agentId: 'leon', capabilityId: 'memory.search', dependsOn: ['research'], input: { query: '$result.research.result.content', limit: 3 } },
   ],
 });
 assert(team.status === 'completed', `multi-agent coordination ended in ${team.status}`);

@@ -3,38 +3,62 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>WULAN — Experience Prototype</title>
+<title>WULAN — Experience</title>
 <link rel="stylesheet" href="experience.css">
 </head>
 <body>
-<main class="world" id="world">
+<main class="wulan" id="world">
   <canvas id="field" aria-hidden="true"></canvas>
-  <div class="scan" aria-hidden="true"></div>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
   <header class="topbar">
-    <div class="identity"><span class="mark">W</span><div><b>WULAN</b><small>PERSONAL INTELLIGENCE</small></div></div>
-    <div class="presence"><i></i><span>WORLD ONLINE</span><time id="clock"></time></div>
+    <button class="identity" id="identity" type="button" aria-label="Wulan">
+      <span class="mark">W</span>
+      <span class="wordmark"><b>WULAN</b><small>PERSONAL INTELLIGENCE</small></span>
+    </button>
+    <div class="time" id="clock"></div>
   </header>
-  <section class="hero" aria-label="Wulan experience">
-    <div class="eyebrow">WULAN</div>
-    <h1>Everything connected.</h1>
-    <p>A living interface for memory, tools and thought.</p>
+
+  <aside class="rail rail-left" aria-label="Wulan spaces">
+    <button class="rail-item active" type="button"><span class="rail-dot"></span><b>01</b><em>MEMORY</em></button>
+    <button class="rail-item" type="button"><span class="rail-dot"></span><b>02</b><em>AGENTS</em></button>
+    <button class="rail-item" type="button"><span class="rail-dot"></span><b>03</b><em>PROJECTS</em></button>
+    <button class="rail-item" type="button"><span class="rail-dot"></span><b>04</b><em>SYSTEMS</em></button>
+  </aside>
+
+  <section class="presence" id="presence" aria-label="Wulan presence">
+    <div class="presence-aura"></div>
+    <div class="presence-shell shell-one"></div>
+    <div class="presence-shell shell-two"></div>
+    <div class="presence-shell shell-three"></div>
+    <div class="presence-core">
+      <div class="core-light"></div>
+      <div class="core-ring ring-a"></div>
+      <div class="core-ring ring-b"></div>
+      <span class="core-point"></span>
+    </div>
+    <div class="signal signal-a"></div><div class="signal signal-b"></div><div class="signal signal-c"></div>
   </section>
-  <div class="orbit-label label-a">MEMORY <b id="memoryCount">14</b></div>
-  <div class="orbit-label label-b">SYSTEMS <b>06</b></div>
-  <div class="orbit-label label-c">CONNECTED <b>04</b></div>
-  <section class="presence-zone" id="presenceZone" aria-label="Wulan presence">
-    <div class="halo h1"></div><div class="halo h2"></div><div class="halo h3"></div>
-    <div class="core"><span></span></div>
+
+  <section class="intro" id="intro">
+    <span class="intro-kicker">WULAN</span>
+    <h1>What shall we<br><i>connect?</i></h1>
   </section>
-  <section class="conversation" id="conversation" aria-live="polite">
-    <div class="welcome"><small>WULAN</small><p>I’m here.</p></div>
-  </section>
+
+  <div class="floating-note note-a"><span>MEMORY</span><b id="memoryCount">14</b></div>
+  <div class="floating-note note-b"><span>SENTINEL</span><b>READY</b></div>
+  <div class="floating-note note-c"><span>WORLD</span><b>LIVE</b></div>
+
+  <section class="conversation" id="conversation" aria-live="polite"></section>
+
   <form class="composer" id="composer">
-    <button class="voice" type="button" id="voice" aria-label="Voice input">◉</button>
-    <input id="input" autocomplete="off" placeholder="Talk to Wulan…" aria-label="Talk to Wulan">
-    <button class="send" type="submit" aria-label="Send">↗</button>
+    <button class="voice" type="button" id="voice" aria-label="Voice input"><span></span></button>
+    <input id="input" autocomplete="off" placeholder="Talk to Wulan" aria-label="Talk to Wulan">
+    <button class="send" type="submit" aria-label="Send"><span>↗</span></button>
   </form>
-  <div class="gesture-hint">MOVE THROUGH THE FIELD · SPEAK NATURALLY</div>
+
+  <div class="bottom-mark"><span></span> WULAN · PERSONAL INTELLIGENCE</div>
 </main>
 <script type="module" src="experience.js"></script>
 </body>

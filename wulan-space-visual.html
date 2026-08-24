@@ -6,8 +6,13 @@
 <title>Wulan — Personal Intelligence</title>
 <style>
 :root{--cyan:#79efff;--ink:#eaf8fb;--muted:#6b858c;--green:#73f0b0}
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#010407;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#010407;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 #webgl{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+#fallback{position:fixed;inset:0;display:none;place-items:center;z-index:1;pointer-events:none}
+#fallback .fallback-core{width:180px;height:180px;border:1px solid rgba(121,239,255,.28);border-radius:50%;box-shadow:0 0 80px rgba(121,239,255,.08),inset 0 0 55px rgba(121,239,255,.06);position:relative}
+#fallback .fallback-core:before,#fallback .fallback-core:after{content:"";position:absolute;inset:22%;border:1px solid rgba(121,239,255,.2);transform:rotate(45deg)}
+#fallback .fallback-core:after{transform:rotate(-45deg)}
 #ui{position:fixed;inset:0;z-index:5;pointer-events:none}
 .header{position:absolute;left:28px;right:28px;top:22px;height:44px;display:flex;justify-content:space-between;align-items:center}
 .brand{display:flex;align-items:center;gap:11px}.mark{width:36px;height:36px;border:1px solid rgba(121,239,255,.55);border-radius:11px;display:grid;place-items:center;color:var(--cyan);font-size:12px;box-shadow:0 0 28px rgba(121,239,255,.1)}
@@ -17,23 +22,24 @@
 .scene{position:absolute;inset:120px 18px 130px;pointer-events:none}.card{position:absolute;width:196px;min-height:82px;padding:13px 15px;background:linear-gradient(145deg,rgba(5,17,22,.72),rgba(2,7,11,.42));border:1px solid rgba(121,239,255,.13);border-radius:15px;backdrop-filter:blur(14px);box-shadow:0 18px 55px rgba(0,0,0,.4);pointer-events:auto;cursor:pointer;transition:.3s}.card:hover,.card.active{border-color:rgba(121,239,255,.48);box-shadow:0 0 34px rgba(121,239,255,.1),0 18px 55px rgba(0,0,0,.45);transform:translateY(-4px)}
 .card .tag{font:6px ui-monospace,monospace;letter-spacing:.25em;color:#55909b}.card strong{display:block;margin-top:7px;font-size:14px;font-weight:500}.card p{margin:5px 0 0;font-size:9px;line-height:1.45;color:#789097}.dot{position:absolute;right:14px;top:15px;width:5px;height:5px;border-radius:50%;background:#53686f}.live .dot{background:var(--green);box-shadow:0 0 12px var(--green)}
 .c1{left:2%;top:15%}.c2{right:2%;top:21%}.c3{left:5%;bottom:9%}.c4{right:5%;bottom:13%}
-.core-hit{position:absolute;left:50%;top:53%;width:220px;height:220px;transform:translate(-50%,-50%);border:0;background:transparent;pointer-events:auto;cursor:pointer}
+.core-hit{position:absolute;left:50%;top:53%;width:250px;height:250px;transform:translate(-50%,-50%);border:0;background:transparent;pointer-events:auto;cursor:pointer}
 .reply{position:absolute;left:50%;bottom:86px;transform:translateX(-50%) translateY(8px);width:min(760px,72vw);text-align:center;opacity:0;transition:.35s}.reply.show{opacity:1;transform:translateX(-50%) translateY(0)}.reply .who{font:6px ui-monospace,monospace;letter-spacing:.38em;color:var(--cyan)}.reply p{margin:8px 0 0;font-size:17px;font-weight:300;text-shadow:0 0 30px rgba(121,239,255,.13)}
 .quick{position:absolute;left:28px;bottom:93px;display:flex;gap:7px;pointer-events:auto}.quick button{width:35px;height:35px;border:1px solid rgba(121,239,255,.15);background:rgba(3,11,15,.65);border-radius:11px;color:#719099;cursor:pointer}.quick button:hover{color:var(--cyan);border-color:rgba(121,239,255,.45)}
 .command{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);width:min(820px,calc(100% - 110px));height:58px;display:flex;align-items:center;padding:0 7px;border:1px solid rgba(121,239,255,.2);border-radius:18px;background:rgba(2,10,14,.8);backdrop-filter:blur(20px);box-shadow:0 20px 70px rgba(0,0,0,.55);pointer-events:auto}.command:focus-within{border-color:rgba(121,239,255,.5);box-shadow:0 20px 80px rgba(0,0,0,.55),0 0 50px rgba(121,239,255,.08)}
 .voice,.send{width:44px;height:44px;border:1px solid rgba(121,239,255,.17);border-radius:13px;background:rgba(8,22,28,.8);color:var(--cyan);cursor:pointer}.voice.listening{animation:pulse 1.1s infinite}.command input{flex:1;min-width:0;height:100%;border:0;outline:0;background:transparent;color:#e8f8fa;padding:0 15px;font-size:13px}.command input::placeholder{color:#536970}.hint{position:absolute;right:18px;bottom:-18px;color:#33464d;font:6px ui-monospace,monospace;letter-spacing:.13em}
 .toast{position:absolute;right:28px;bottom:103px;width:250px;padding:13px 15px;border:1px solid rgba(121,239,255,.15);border-radius:13px;background:rgba(3,13,17,.88);backdrop-filter:blur(18px);box-shadow:0 20px 60px rgba(0,0,0,.5);opacity:0;transform:translateY(10px);transition:.3s}.toast.show{opacity:1;transform:none}.toast small{font:6px ui-monospace,monospace;letter-spacing:.24em;color:var(--cyan)}.toast p{margin:6px 0 0;font-size:10px;line-height:1.45;color:#a7bec4}
+.error-badge{position:absolute;left:50%;top:calc(53% + 145px);transform:translateX(-50%);font:6px ui-monospace,monospace;letter-spacing:.18em;color:#536970;display:none}
 @keyframes pulse{50%{box-shadow:0 0 28px rgba(121,239,255,.24)}}
 @media(max-width:900px){.header{left:20px;right:20px}.scene{inset:125px 10px 140px}.card{width:158px}.c1{left:0}.c2{right:0}.c3{left:0}.c4{right:0}.command{width:calc(100% - 34px)}.quick{left:18px}.toast{right:18px}}
 @media(max-width:600px){.topline h1{font-size:28px}.topline p{font-size:6px}.card{width:136px;padding:10px 11px}.card strong{font-size:11px}.card p{font-size:8px}.core-hit{width:180px;height:180px}.reply{width:88vw}.quick{bottom:98px}.command{height:55px}.hint{display:none}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 </style>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js"}}</script>
 </head>
 <body>
-<canvas id="webgl"></canvas>
+<canvas id="webgl" aria-hidden="true"></canvas>
+<div id="fallback"><div class="fallback-core"></div></div>
 <div id="ui">
-<header class="header"><div class="brand"><div class="mark">W</div><div><b>WULAN</b><small>PERSONAL INTELLIGENCE</small></div></div><div class="status"><i></i>ONLINE · WULAN CORE</div></header>
+<header class="header"><div class="brand"><div class="mark">W</div><div><b>WULAN</b><small>PERSONAL INTELLIGENCE</small></div></div><div class="status" id="status"><i></i>ONLINE · WULAN CORE</div></header>
 <section class="topline"><div class="eyebrow">WULAN / PERSONAL INTELLIGENCE</div><h1>Everything connected.</h1><p>memory · systems · projects · tools · cognition</p></section>
 <main class="scene">
 <article class="card live satellite c1" data-name="MEMORY"><span class="dot"></span><div class="tag">01 / MEMORY</div><strong>Memory</strong><p>Context, experiences and things worth remembering.</p></article>
@@ -45,45 +51,300 @@
 <div class="quick"><button data-action="memory" title="Memory">◌</button><button data-action="sentinel" title="Sentinel">⌁</button><button data-action="projects" title="Projects">◇</button></div>
 <section class="reply" id="reply"><div class="who">WULAN</div><p id="answer"></p></section>
 <div class="toast" id="toast"><small id="toastK">SYSTEM</small><p id="toastP"></p></div>
+<div class="error-badge" id="errorBadge">VISUAL FALLBACK · CORE ONLINE</div>
 <form class="command" id="command"><button class="voice" id="voice" type="button">◉</button><input id="input" autocomplete="off" placeholder="Talk to Wulan…"><button class="send" type="submit">↗</button><span class="hint">ENTER TO SEND · SPACE TO FOCUS</span></form>
 </div>
+
 <script type="module">
-import * as THREE from 'three';
-import {EffectComposer} from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/EffectComposer.js';
-import {RenderPass} from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/RenderPass.js';
-import {UnrealBloomPass} from 'https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/postprocessing/UnrealBloomPass.js';
-const canvas=document.getElementById('webgl');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));renderer.setSize(innerWidth,innerHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;
-const scene=new THREE.Scene();scene.background=new THREE.Color(0x010407);const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);camera.position.set(0,0,10);
-const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.62,.55,.2));
-const clock=new THREE.Clock(),world=new THREE.Group();scene.add(world);
-const particleVertex=`attribute float aSize;attribute float aPhase;uniform float uTime;uniform float uPixelRatio;varying float vAlpha;void main(){vec3 p=position;float t=uTime*.045+aPhase*6.283;p+=vec3(sin(t+p.z)*.035,cos(t*.8+p.x)*.035,sin(t*.7+p.y)*.025);vec4 mv=modelViewMatrix*vec4(p,1.0);gl_PointSize=aSize*uPixelRatio*(6.0/(-mv.z));gl_Position=projectionMatrix*mv;vAlpha=.32+.28*sin(t*1.7);}`;
-const particleFragment=`varying float vAlpha;void main(){vec2 uv=gl_PointCoord-.5;float d=length(uv);float a=smoothstep(.5,0.,d);gl_FragColor=vec4(.20,.66,.73,a*vAlpha);}`;
-const count=950,pos=new Float32Array(count*3),sizes=new Float32Array(count),phases=new Float32Array(count);
-for(let i=0;i<count;i++){const r=THREE.MathUtils.lerp(5,15,Math.pow(Math.random(),.62)),a=Math.random()*Math.PI*2;pos[i*3]=Math.cos(a)*r;pos[i*3+1]=Math.sin(a)*r*.68;pos[i*3+2]=(Math.random()-.5)*8;sizes[i]=THREE.MathUtils.lerp(.35,1.1,Math.random());phases[i]=Math.random();}
-const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pos,3));pg.setAttribute('aSize',new THREE.BufferAttribute(sizes,1));pg.setAttribute('aPhase',new THREE.BufferAttribute(phases,1));
-const pm=new THREE.ShaderMaterial({vertexShader:particleVertex,fragmentShader:particleFragment,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{uTime:{value:0},uPixelRatio:{value:renderer.getPixelRatio()}}});scene.add(new THREE.Points(pg,pm));
-const nodes=[[-2.7,1.8,.4],[2.7,1.5,-.2],[-3,-1.8,-.1],[3,-1.5,.35],[0,2.8,-.4],[0,-2.6,.3]];
-const nodeGroup=new THREE.Group();world.add(nodeGroup),nodeMeshes=[];
-for(let i=0;i<nodes.length;i++){const [x,y,z]=nodes[i],g=new THREE.Group();g.position.set(x,y,z);const shell=new THREE.Mesh(new THREE.IcosahedronGeometry(.16,1),new THREE.MeshBasicMaterial({color:i%2?0x4bbdcb:0x7fefff,wireframe:true,transparent:true,opacity:.7})),core=new THREE.Mesh(new THREE.SphereGeometry(.045,12,12),new THREE.MeshBasicMaterial({color:0x8fffff,transparent:true,opacity:.85}));g.add(shell,core);nodeGroup.add(g);nodeMeshes.push(g)}
-const edgePos=[];[[0,4],[4,1],[1,3],[3,5],[5,2],[2,0],[0,1],[2,3]].forEach(([a,b])=>edgePos.push(...nodes[a],...nodes[b]));
-const eg=new THREE.BufferGeometry();eg.setAttribute('position',new THREE.Float32BufferAttribute(edgePos,3));nodeGroup.add(new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x185665,transparent:true,opacity:.34,blending:THREE.AdditiveBlending})));
-const coreGroup=new THREE.Group();world.add(coreGroup),reactor=new THREE.Group();coreGroup.add(reactor);
-const prism=new THREE.Mesh(new THREE.OctahedronGeometry(.62,2),new THREE.MeshBasicMaterial({color:0x0a313a,wireframe:true,transparent:true,opacity:.9,blending:THREE.AdditiveBlending}));reactor.add(prism);
-const inner=new THREE.Mesh(new THREE.OctahedronGeometry(.35,2),new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{uTime:{value:0},uPulse:{value:0}},vertexShader:`varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,fragmentShader:`uniform float uTime;uniform float uPulse;varying vec3 vP;void main(){float f=pow(1.-abs(normalize(vP).z),2.);float w=.5+.5*sin(vP.y*12.+uTime*2.2);vec3 c=mix(vec3(.03,.22,.27),vec3(.32,.95,1.),f*.8+w*.12+uPulse*.35);gl_FragColor=vec4(c,.88);}`}));reactor.add(inner);
-function torus(r,tube,rot,color,op){const m=new THREE.Mesh(new THREE.TorusGeometry(r,tube,10,96),new THREE.MeshBasicMaterial({color,transparent:true,opacity:op,blending:THREE.AdditiveBlending,depthWrite:false}));m.rotation.set(rot[0],rot[1],rot[2]);reactor.add(m);return m}
-const rings=[torus(.88,.008,[1.12,.2,0],0x52e7f7,.55),torus(1.12,.006,[.35,1,.7],0x2a91a5,.32),torus(1.38,.004,[1.4,.15,.2],0x245e70,.2)];
-const halo=new THREE.Mesh(new THREE.SphereGeometry(1.72,24,24),new THREE.MeshBasicMaterial({color:0x22b8d0,transparent:true,opacity:.025,blending:THREE.AdditiveBlending,depthWrite:false}));reactor.add(halo);
-let targetX=0,targetY=0,mouseX=0,mouseY=0;addEventListener('pointermove',e=>{mouseX=e.clientX/innerWidth-.5;mouseY=e.clientY/innerHeight-.5});
-function pulse(){inner.material.uniforms.uPulse.value=1;setTimeout(()=>inner.material.uniforms.uPulse.value=0,500)}
-function animate(){requestAnimationFrame(animate);const t=clock.getElapsedTime();pm.uniforms.uTime.value=t;inner.material.uniforms.uTime.value=t;targetX+=(mouseX*.35-targetX)*.025;targetY+=(-mouseY*.25-targetY)*.025;world.rotation.y+=(targetX-world.rotation.y)*.02;world.rotation.x+=(targetY-world.rotation.x)*.02;reactor.rotation.y=t*.25;reactor.rotation.x=Math.sin(t*.4)*.12;prism.rotation.z=-t*.22;inner.rotation.y=-t*.3;halo.scale.setScalar(1+.05*Math.sin(t));rings[0].rotation.z=t*.18;rings[1].rotation.z=-t*.11;rings[2].rotation.z=t*.06;nodeMeshes.forEach((n,i)=>{n.rotation.x=t*(.08+i*.01);n.rotation.y=-t*(.11+i*.008);n.scale.setScalar(1+.08*Math.sin(t*1.2+i))});composer.render()}
-animate();
-addEventListener('resize',()=>{renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();composer.setSize(innerWidth,innerHeight);pm.uniforms.uPixelRatio.value=renderer.getPixelRatio()});window.addEventListener('pointerdown',pulse);
-function say(text){const el=document.getElementById('answer');el.textContent=String(text);const r=document.getElementById('reply');r.classList.remove('show');requestAnimationFrame(()=>r.classList.add('show'));clearTimeout(window.__replyTimer);window.__replyTimer=setTimeout(()=>r.classList.remove('show'),9000)}
-function notify(k,p){document.getElementById('toastK').textContent=k;document.getElementById('toastP').textContent=p;const t=document.getElementById('toast');t.classList.add('show');clearTimeout(window.__toastTimer);window.__toastTimer=setTimeout(()=>t.classList.remove('show'),4500)}
-window.say=say;window.notify=notify;
-document.querySelectorAll('.satellite').forEach(card=>card.addEventListener('click',()=>{card.classList.add('active');pulse()}));document.getElementById('core').addEventListener('click',()=>{pulse();say("I'm here. Give me something to do.")});document.getElementById('command').addEventListener('submit',e=>{e.preventDefault()});document.getElementById('voice').addEventListener('click',e=>e.stopPropagation());document.getElementById('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey)e.preventDefault()});
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('webgl');
+const fallback = $('fallback');
+const status = $('status');
+const errorBadge = $('errorBadge');
+const reply = $('reply');
+const answer = $('answer');
+const toast = $('toast');
+const toastK = $('toastK');
+const toastP = $('toastP');
+
+window.say = (text) => {
+  const value = String(text ?? '');
+  if (answer) answer.textContent = value;
+  if (reply) reply.classList.toggle('show', Boolean(value));
+};
+
+window.notify = (kind, text) => {
+  if (!toast || !toastP) return;
+  if (toastK) toastK.textContent = String(kind || 'SYSTEM').toUpperCase();
+  toastP.textContent = String(text ?? '');
+  toast.classList.add('show');
+  clearTimeout(window.__wulanToastTimer);
+  window.__wulanToastTimer = setTimeout(() => toast.classList.remove('show'), 3600);
+};
+
+let renderer = null;
+let animationId = 0;
+let reactor = null;
+let world = null;
+let corePulse = 0;
+let pointerX = 0;
+let pointerY = 0;
+let targetX = 0;
+let targetY = 0;
+
+function visualFallback(reason) {
+  cancelAnimationFrame(animationId);
+  if (renderer) {
+    try { renderer.dispose(); } catch {}
+  }
+  renderer = null;
+  if (canvas) canvas.style.display = 'none';
+  if (fallback) fallback.style.display = 'grid';
+  if (errorBadge) errorBadge.style.display = 'block';
+  if (status) status.innerHTML = '<i></i>ONLINE · CORE ONLY';
+  console.warn('[Wulan Visual] WebGL unavailable:', reason);
+}
+
+function makeStars(scene) {
+  const count = 700;
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const radius = 5 + Math.random() * 13;
+    const angle = Math.random() * Math.PI * 2;
+    positions[i * 3] = Math.cos(angle) * radius;
+    positions[i * 3 + 1] = (Math.random() - .5) * 12;
+    positions[i * 3 + 2] = (Math.random() - .5) * 10;
+    sizes[i] = .5 + Math.random() * 1.4;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  const material = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {},
+    vertexShader: `
+      attribute float size;
+      void main(){
+        vec4 mv = modelViewMatrix * vec4(position,1.0);
+        gl_PointSize = size * (6.0 / max(-mv.z,.5));
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      void main(){
+        vec2 p = gl_PointCoord - .5;
+        float a = smoothstep(.5,0.,length(p));
+        gl_FragColor = vec4(.18,.55,.64,a*.42);
+      }`
+  });
+  scene.add(new THREE.Points(geometry, material));
+}
+
+function makeNetwork(group) {
+  const nodes = [
+    [-2.8, 1.55, .1], [2.75, 1.3, -.2],
+    [-2.9,-1.55,.25], [2.85,-1.35,.05],
+    [0,2.55,-.35], [0,-2.35,.2]
+  ];
+  const nodeMeshes = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const node = new THREE.Group();
+    node.position.set(...nodes[i]);
+    const shell = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(.14,1),
+      new THREE.MeshBasicMaterial({
+        color: i % 2 ? 0x4bbdcb : 0x79efff,
+        wireframe:true, transparent:true, opacity:.68
+      })
+    );
+    const point = new THREE.Mesh(
+      new THREE.SphereGeometry(.035,10,10),
+      new THREE.MeshBasicMaterial({color:0x8fffff})
+    );
+    node.add(shell, point);
+    group.add(node);
+    nodeMeshes.push(node);
+  }
+  const links = [[0,4],[4,1],[1,3],[3,5],[5,2],[2,0],[0,1],[2,3]];
+  const linePositions = [];
+  for (const [a,b] of links) linePositions.push(...nodes[a], ...nodes[b]);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions,3));
+  group.add(new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({color:0x175665,transparent:true,opacity:.28})
+  ));
+  return nodeMeshes;
+}
+
+function makeReactor() {
+  const group = new THREE.Group();
+
+  const outer = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(.78,1),
+    new THREE.MeshBasicMaterial({color:0x2a7f8c,wireframe:true,transparent:true,opacity:.72})
+  );
+  group.add(outer);
+
+  const inner = new THREE.Mesh(
+    new THREE.OctahedronGeometry(.42,1),
+    new THREE.MeshBasicMaterial({color:0x79efff,wireframe:true,transparent:true,opacity:.9})
+  );
+  group.add(inner);
+
+  const rings = [];
+  const ringSpecs = [
+    [1.05, 0.07, 0, 0.25],
+    [1.28, 0.045, Math.PI/2, -0.18],
+    [1.52, 0.025, Math.PI/4, 0.11]
+  ];
+  for (const [radius,tube,rotation,speed] of ringSpecs) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(radius,tube,8,96),
+      new THREE.MeshBasicMaterial({
+        color:0x2f9aaa,transparent:true,opacity:.38,
+        blending:THREE.AdditiveBlending
+      })
+    );
+    ring.rotation.x = Math.PI/2;
+    ring.rotation.z = rotation;
+    ring.userData.speed = speed;
+    group.add(ring);
+    rings.push(ring);
+  }
+
+  const crossA = new THREE.Mesh(
+    new THREE.TorusGeometry(.9,.012,6,72),
+    new THREE.MeshBasicMaterial({color:0x79efff,transparent:true,opacity:.22})
+  );
+  crossA.rotation.x = Math.PI/2;
+  group.add(crossA);
+
+  const core = new THREE.Mesh(
+    new THREE.OctahedronGeometry(.18,2),
+    new THREE.MeshBasicMaterial({
+      color:0x9fffff,transparent:true,opacity:.95,
+      blending:THREE.AdditiveBlending
+    })
+  );
+  group.add(core);
+
+  group.userData.outer = outer;
+  group.userData.inner = inner;
+  group.userData.rings = rings;
+  group.userData.core = core;
+  return group;
+}
+
+function bootVisual() {
+  try {
+    if (!window.WebGLRenderingContext) throw new Error('WebGLRenderingContext unavailable');
+
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x010407, 1);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(
+      38,
+      window.innerWidth / window.innerHeight,
+      .1,
+      100
+    );
+    camera.position.set(0,0,9);
+
+    world = new THREE.Group();
+    scene.add(world);
+
+    makeStars(scene);
+
+    const network = new THREE.Group();
+    world.add(network);
+    makeNetwork(network);
+
+    reactor = makeReactor();
+    reactor.position.set(0,.15,0);
+    world.add(reactor);
+
+    const clock = new THREE.Clock();
+
+    const resize = () => {
+      if (!renderer) return;
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', resize, {passive:true});
+
+    window.addEventListener('pointermove', (event) => {
+      targetX = (event.clientX / Math.max(window.innerWidth,1) - .5) * 0.7;
+      targetY = (event.clientY / Math.max(window.innerHeight,1) - .5) * 0.45;
+    }, {passive:true});
+
+    const render = () => {
+      animationId = requestAnimationFrame(render);
+      const t = clock.getElapsedTime();
+
+      pointerX += (targetX - pointerX) * .035;
+      pointerY += (targetY - pointerY) * .035;
+
+      world.rotation.y = pointerX * .28 + Math.sin(t * .08) * .025;
+      world.rotation.x = -pointerY * .18;
+
+      const rings = reactor.userData.rings || [];
+      rings.forEach((ring, i) => {
+        ring.rotation.z += ring.userData.speed * .0025;
+        ring.rotation.y += (i + 1) * .0007;
+      });
+
+      reactor.userData.outer.rotation.x = t * .12;
+      reactor.userData.outer.rotation.y = -t * .17;
+      reactor.userData.inner.rotation.x = -t * .22;
+      reactor.userData.inner.rotation.y = t * .3;
+      reactor.userData.core.scale.setScalar(1 + Math.sin(t * 2.2) * .055 + corePulse);
+      corePulse *= .94;
+
+      renderer.render(scene,camera);
+    };
+
+    window.addEventListener('wulan:pulse', () => { corePulse = .22; }, {passive:true});
+    window.addEventListener('beforeunload', () => {
+      cancelAnimationFrame(animationId);
+      renderer?.dispose();
+    });
+
+    render();
+    status.innerHTML = '<i></i>ONLINE · WULAN CORE';
+  } catch (error) {
+    visualFallback(error);
+  }
+}
+
+window.addEventListener('error', (event) => {
+  if (event?.error && /THREE|WebGL|shader|renderer/i.test(String(event.error.message || event.message))) {
+    visualFallback(event.error);
+  }
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event?.reason;
+  if (reason && /THREE|WebGL|shader|renderer/i.test(String(reason.message || reason))) {
+    visualFallback(reason);
+  }
+});
+
+bootVisual();
 </script>
 </body>
 </html>

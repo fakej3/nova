@@ -44,6 +44,20 @@ assert(dispatched.agentId === 'leon' || dispatched.agentId === 'atlas', `supervi
 assert(dispatched.run?.status === 'completed', `dispatched assignment ended in ${dispatched.run?.status}`);
 assert(dispatched.candidates?.some(candidate => candidate.agentId === 'leon'), 'supervisor did not expose capable candidate');
 
+const team = await core.agentSupervisor.coordinate({
+  name: 'multi-agent smoke team',
+  tasks: [
+    { id: 'research', agentId: 'atlas', capabilityId: 'memory.remember', input: { content: 'Team research result.', type: 'fact', tags: ['smoke-team'] } },
+    { id: 'verify', agentId: 'leon', capabilityId: 'memory.search', dependsOn: ['research'], input: { query: '$result.research.result', limit: 3 } },
+  ],
+});
+assert(team.status === 'completed', `multi-agent coordination ended in ${team.status}`);
+assert(team.tasks.every(step => step.status === 'success'), 'multi-agent team did not complete every step');
+assert(team.tasks.find(step => step.id === 'research')?.agentId === 'atlas', 'team did not honor research agent assignment');
+assert(team.tasks.find(step => step.id === 'verify')?.agentId === 'leon', 'team did not honor verification agent assignment');
+assert(team.results.verify?.result?.lexical?.length > 0, 'dependent agent did not receive upstream result');
+assert(core.agentRuntime.get('atlas')?.status === 'idle' && core.agentRuntime.get('leon')?.status === 'idle', 'team agents did not return to idle');
+
 const agentRun = await core.agentRuntime.assign('leon', {
   name: 'agent smoke assignment',
   tasks: [
@@ -58,6 +72,10 @@ assert(agentRun.result?.results?.search?.result?.lexical?.length > 0, 'agent dep
 let denied = false;
 try { await core.agentRuntime.assign('leon', { name: 'denied assignment', tasks: [{ id: 'status', capabilityId: 'system.status', input: {} }] }); } catch (error) { denied = String(error?.message).includes('AGENT_CAPABILITY_DENIED'); }
 assert(denied, 'agent capability boundary did not reject an unauthorized capability');
+
+let badTeam = false;
+try { await core.agentSupervisor.coordinate({ name: 'bad team', tasks: [{ id: 'a', agentId: 'pixel', capabilityId: 'memory.search', input: {} }] }); } catch (error) { badTeam = String(error?.message).includes('AGENT_CAPABILITY_DENIED'); }
+assert(badTeam, 'team coordination did not reject an unauthorized agent capability');
 
 const remembered = core.remember({ content: 'Nova smoke test memory survives persistence.', type: 'fact', importance: 0.8, tags: ['smoke-test'] });
 assert(remembered?.id, 'memory creation failed');
@@ -95,4 +113,4 @@ assert(restored.cognition.orchestrator.get(task.id)?.status === 'completed', 'co
 const restoredHealth = restored.health?.check?.(['memory', 'persistence']);
 assert(restoredHealth?.overall !== 'failed', 'restored core has a failed memory/persistence health check');
 
-console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), supervisor: core.agentSupervisor.status(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, dispatchedAgent: dispatched.agentId, experienceRecorded: true }, null, 2));
+console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), supervisor: core.agentSupervisor.status(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, team: team.status, cognition: cognition.status, dispatchedAgent: dispatched.agentId, experienceRecorded: true }, null, 2));

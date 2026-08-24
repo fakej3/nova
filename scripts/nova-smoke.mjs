@@ -31,7 +31,19 @@ assert(core.neural.stats().neurons >= 5, 'baseline neural topology was not creat
 assert(core.neural.stats().synapses >= 8, 'baseline neural topology has too few synapses');
 assert(core.agentRuntime?.list?.().length === 4, 'agent runtime did not expose all registered agents');
 
+core.agentRuntime.configure('atlas', { capabilities: ['memory.remember'] });
 core.agentRuntime.configure('leon', { capabilities: ['memory.remember', 'memory.search'] });
+core.agentRuntime.configure('oracle', { capabilities: ['memory.search'] });
+core.agentRuntime.configure('pixel', { capabilities: [] });
+
+const dispatched = await core.agentSupervisor.dispatch({
+  name: 'agent dispatch assignment',
+  tasks: [{ id: 'remember', capabilityId: 'memory.remember', input: { content: 'Supervisor dispatch memory.', type: 'fact', tags: ['smoke-supervisor'] } }],
+});
+assert(dispatched.agentId === 'leon' || dispatched.agentId === 'atlas', `supervisor chose unexpected agent ${dispatched.agentId}`);
+assert(dispatched.run?.status === 'completed', `dispatched assignment ended in ${dispatched.run?.status}`);
+assert(dispatched.candidates?.some(candidate => candidate.agentId === 'leon'), 'supervisor did not expose capable candidate');
+
 const agentRun = await core.agentRuntime.assign('leon', {
   name: 'agent smoke assignment',
   tasks: [
@@ -83,4 +95,4 @@ assert(restored.cognition.orchestrator.get(task.id)?.status === 'completed', 'co
 const restoredHealth = restored.health?.check?.(['memory', 'persistence']);
 assert(restoredHealth?.overall !== 'failed', 'restored core has a failed memory/persistence health check');
 
-console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, experienceRecorded: true }, null, 2));
+console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), supervisor: core.agentSupervisor.status(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, dispatchedAgent: dispatched.agentId, experienceRecorded: true }, null, 2));

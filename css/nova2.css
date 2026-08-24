@@ -19,4 +19,15 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;bac
 .wulan-panel,.wulan-card,.wulan-chat,.wulan-composer,.chat-composer,button{transition:transform .24s cubic-bezier(.2,.7,.2,1),border-color .24s ease,box-shadow .24s ease,background-color .24s ease}
 .wulan-panel:hover,.wulan-card:hover{transform:translateY(-1px);border-color:rgba(160,205,255,.19)}
 button:hover{box-shadow:0 0 24px rgba(105,180,255,.08)}
+
+/* Spatial Wulan field: make the world legible without turning it into a status dashboard. */
+.w-stage{isolation:isolate}
+.w-stage::before{content:"";position:absolute;left:50%;top:50%;width:min(66vw,720px);height:min(54vw,520px);transform:translate(-50%,-48%);border:1px solid rgba(121,232,255,.13);border-radius:50%;background:radial-gradient(ellipse at center,rgba(68,151,213,.105) 0%,rgba(40,74,124,.045) 24%,transparent 58%),repeating-radial-gradient(ellipse at center,transparent 0 31px,rgba(121,232,255,.055) 32px 33px,transparent 34px 68px);box-shadow:0 0 90px rgba(71,156,224,.08),inset 0 0 80px rgba(91,156,220,.035);animation:wulanFieldBreath 7s ease-in-out infinite;z-index:-1}
+.w-stage::after{content:"";position:absolute;left:50%;top:50%;width:min(78vw,820px);height:min(62vw,610px);transform:translate(-50%,-48%);background:linear-gradient(rgba(121,232,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(121,232,255,.035) 1px,transparent 1px);background-size:52px 52px;mask-image:radial-gradient(ellipse at center,#000 0%,transparent 70%);opacity:.55;z-index:-2}
+.w-title{z-index:2;text-shadow:0 0 34px rgba(121,232,255,.1)}
+.w-title h1{font-size:clamp(34px,4.6vw,64px)}
+.w-caption{color:#62768e}
+@keyframes wulanFieldBreath{0%,100%{transform:translate(-50%,-48%) scale(.985);opacity:.68}50%{transform:translate(-50%,-48%) scale(1.015);opacity:1}}
+@media(max-width:720px){.w-stage::before{width:118vw;height:92vw}.w-stage::after{width:132vw;height:100vw;background-size:42px 42px}.w-title h1{font-size:34px}}
+
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}

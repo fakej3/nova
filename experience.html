@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WULAN — Experience Prototype</title>
+<link rel="stylesheet" href="experience.css">
+</head>
+<body>
+<main class="world" id="world">
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="scan" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="identity"><span class="mark">W</span><div><b>WULAN</b><small>PERSONAL INTELLIGENCE</small></div></div>
+    <div class="presence"><i></i><span>WORLD ONLINE</span><time id="clock"></time></div>
+  </header>
+  <section class="hero" aria-label="Wulan experience">
+    <div class="eyebrow">WULAN</div>
+    <h1>Everything connected.</h1>
+    <p>A living interface for memory, tools and thought.</p>
+  </section>
+  <div class="orbit-label label-a">MEMORY <b id="memoryCount">14</b></div>
+  <div class="orbit-label label-b">SYSTEMS <b>06</b></div>
+  <div class="orbit-label label-c">CONNECTED <b>04</b></div>
+  <section class="presence-zone" id="presenceZone" aria-label="Wulan presence">
+    <div class="halo h1"></div><div class="halo h2"></div><div class="halo h3"></div>
+    <div class="core"><span></span></div>
+  </section>
+  <section class="conversation" id="conversation" aria-live="polite">
+    <div class="welcome"><small>WULAN</small><p>I’m here.</p></div>
+  </section>
+  <form class="composer" id="composer">
+    <button class="voice" type="button" id="voice" aria-label="Voice input">◉</button>
+    <input id="input" autocomplete="off" placeholder="Talk to Wulan…" aria-label="Talk to Wulan">
+    <button class="send" type="submit" aria-label="Send">↗</button>
+  </form>
+  <div class="gesture-hint">MOVE THROUGH THE FIELD · SPEAK NATURALLY</div>
+</main>
+<script type="module" src="experience.js"></script>
+</body>
+</html>

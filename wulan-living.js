@@ -1,124 +1,59 @@
 import { createDefaultWulanCore } from './wulan/core/manifest.js';
 import { WULAN_EVENTS } from './wulan/core/event-bus.js';
-import { LIVING_STATES, WulanLivingState } from './wulan/core/living-state.js';
 
 (() => {
-  const core = typeof window !== 'undefined' && window.WULAN_CORE ? window.WULAN_CORE : createDefaultWulanCore();
-  const living = new WulanLivingState();
-  const persistence = core?.persistence ?? null;
   const $ = (s) => document.querySelector(s);
   const canvas = $('#nova-canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas?.getContext('2d');
   const input = $('#nova-input');
   const composer = $('#composer');
-  const voice = $('#voice');
   const messages = $('#messages');
-  const presence = $('#presence-core') || $('.w-stage') || canvas;
-  const presenceText = $('#presence-text');
-  const activityState = $('#activity-state');
-  const activityLine = $('#activity-line');
-  const headline = $('#headline');
-  const subline = $('#subline');
-  const memoryLabel = $('#memory-label');
-  const agentsLabel = $('#agents-label');
+  const voice = $('#voice');
+  const memoryCountEl = $('#memory-count');
   const memoryHint = $('#memory-hint');
   const providerHint = $('#provider-hint');
+  const providerState = $('#provider-state');
+  const clock = $('#clock');
 
-  let w = 0, h = 0, dpr = 1, t = 0;
-  let visualState = living.snapshot();
-  const pointer = { x: 0, y: 0, active: false, velocity: 0 };
-  let lastPointer = null;
-  const particles = [];
-  const tendrils = [];
-  const sparks = [];
-
-  for (let i = 0; i < 210; i++) particles.push({ a: Math.random() * 6.28, r: .08 + Math.random() * .98, phase: Math.random() * 6.28, speed: .15 + Math.random() * .7, size: .35 + Math.random() * 1.5 });
-  for (let i = 0; i < 46; i++) tendrils.push({ angle: i / 46 * 6.28 + Math.random() * .08, len: .55 + Math.random() * .65, width: .5 + Math.random() * 1.5, phase: Math.random() * 6.28, speed: .15 + Math.random() * .45, curve: (Math.random() - .5) * .7 });
-  for (let i = 0; i < 34; i++) sparks.push({ a: Math.random() * 6.28, r: .1 + Math.random() * .6, phase: Math.random() * 6.28, speed: .4 + Math.random() * 1.2 });
-
-  function resize() {
-    dpr = Math.min(devicePixelRatio || 1, 2);
-    w = innerWidth; h = innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    pointer.x = w / 2; pointer.y = h * .53;
-  }
-  addEventListener('resize', resize); resize();
-
-  const center = () => ({ x: w / 2 + Math.sin(t * .17) * w * .012, y: h * .53 + Math.cos(t * .13) * h * .008 });
-  const S = () => Math.min(w, h);
-  const energy = () => visualState.energy;
-
-  function organicPoint(angle, r, phase = 0) {
-    const q = center(), e = energy();
-    const pulse = 1 + Math.sin(t * 1.35 + phase) * (.025 + e * .035);
-    const breathing = 1 + Math.sin(t * .58 + phase * .3) * (.045 + e * .025);
-    const noise = Math.sin(angle * 3.1 + t * .38 + phase) * (.045 + e * .025) + Math.sin(angle * 7.7 - t * .21 + phase * 2) * .018;
-    const rr = r * (pulse + noise) * breathing;
-    return { x: q.x + Math.cos(angle) * S() * .27 * rr, y: q.y + Math.sin(angle) * S() * .19 * rr };
+  let core;
+  try {
+    core = window.WULAN_CORE || createDefaultWulanCore();
+    window.WULAN_CORE = core;
+  } catch (error) {
+    console.error('[Wulan] core boot construction failed', error);
+    core = null;
   }
 
-  function drawTendril(th, index, e) {
-    const a = th.angle + t * th.speed * (.018 + e * .025);
-    ctx.beginPath();
-    for (let j = 0; j <= 44; j++) {
-      const p = j / 44;
-      const curl = Math.sin(p * 4.8 + th.phase + t * (.35 + e * .7)) * .12 * p * p;
-      const sway = Math.sin(t * .42 + th.phase + p * 3) * (.025 + e * .03) * p;
-      const pt = organicPoint(a + curl + th.curve * p * p, .07 + p * th.len + sway, th.phase);
-      if (j === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-    }
-    const alpha = .025 + e * .065 * (index % 4 === 0 ? 1.5 : 1);
-    ctx.strokeStyle = index % 3 === 0 ? `rgba(104,226,255,${alpha})` : index % 3 === 1 ? `rgba(157,137,255,${alpha * .8})` : `rgba(109,230,190,${alpha * .72})`;
-    ctx.lineWidth = th.width * (.65 + e * .5);
-    ctx.stroke();
-  }
+  const style = document.createElement('style');
+  style.textContent = `
+    :root{--w-bg:#03070d;--w-line:rgba(148,213,240,.16);--w-cyan:#79e8ff;--w-violet:#a98bff;--w-mint:#70e5b4;--w-text:#e8f4fb}
+    html,body{background:#02060b!important;color:var(--w-text);overflow:hidden}
+    body{background:radial-gradient(ellipse at 50% 45%,rgba(15,42,66,.52) 0%,rgba(4,12,21,.82) 34%,#02060b 76%)!important}.grain{opacity:.16!important}
+    .wulan-world{height:100dvh!important;min-height:640px;overflow:hidden!important}
+    .w-top{top:22px!important;left:30px!important;right:30px!important;height:48px!important}.w-mark{width:40px!important;height:40px!important;border-radius:13px!important;background:linear-gradient(145deg,rgba(121,232,255,.12),rgba(121,232,255,.025))!important;box-shadow:0 0 35px rgba(121,232,255,.12),inset 0 0 20px rgba(121,232,255,.035)!important;font-size:14px!important}.w-id{gap:13px!important}.w-id strong{font-size:14px!important;letter-spacing:.3em!important}.w-id small{font-size:7px!important;color:#71869b!important}.w-online{font-size:7px!important;color:#6d8298!important}.w-online i{width:6px!important;height:6px!important}
+    .w-rail{left:30px!important;top:125px!important;bottom:34px!important;width:118px!important;gap:8px!important}.w-kicker{font-size:7px!important;color:#52687d!important;padding:6px 10px 16px!important}.w-nav,.w-neural{padding:11px 10px!important;border-radius:10px!important}.w-nav b,.w-neural b{font-size:9px!important;letter-spacing:.16em!important}.w-nav small,.w-neural small{font-size:7px!important;color:#5b7085!important}.w-nav span,.w-neural span{font-size:7px!important}
+    .w-panel{width:276px!important;padding:18px 19px!important;border-radius:18px!important;background:linear-gradient(145deg,rgba(9,18,30,.82),rgba(3,8,15,.58))!important;border-color:rgba(148,213,240,.15)!important;box-shadow:0 30px 100px rgba(0,0,0,.36),inset 0 1px rgba(255,255,255,.035)!important}.w-left{left:170px!important;top:125px!important}.w-right{right:30px!important;top:125px!important;width:286px!important}.w-head{font-size:7px!important;margin-bottom:13px!important}.w-row{padding:10px 0!important}.w-row b,.w-tool b{font-size:9px!important}.w-row small,.w-tool small{font-size:7px!important}.w-row em,.w-tool em{font-size:6px!important}.w-dot{width:6px!important;height:6px!important}.w-stats strong{font-size:21px!important}.w-stats small{font-size:6px!important}.w-glyph{width:28px!important;height:28px!important}
+    .w-stage{inset:80px 350px 125px 350px!important;z-index:5!important}.w-title{top:12%!important}.w-title span{font-size:7px!important;letter-spacing:.5em!important}.w-title h1{font-size:clamp(40px,4.6vw,72px)!important;margin:13px 0 8px!important}.w-title p{font-size:7px!important;color:#657b91!important}.w-caption{bottom:5%!important;font-size:6px!important}
+    .w-chat{width:min(760px,calc(100% - 720px))!important;min-width:520px;bottom:28px!important;z-index:100!important}.w-chat .messages{max-height:150px!important;gap:8px!important;margin-bottom:10px!important;padding:0 8px!important}.w-chat .message{max-width:82%!important;padding:10px 13px!important;border-radius:14px!important;background:rgba(7,15,24,.9)!important;border-color:rgba(148,213,240,.14)!important;box-shadow:0 12px 40px rgba(0,0,0,.18)!important}.w-chat .message.user{background:linear-gradient(135deg,rgba(43,120,151,.24),rgba(26,70,91,.12))!important;border-color:rgba(121,232,255,.25)!important}.w-chat .message-name{font-size:6px!important;margin-bottom:4px!important}.w-chat .message p{font-size:12px!important;line-height:1.45!important}.w-chat .composer{height:62px!important;border:1px solid rgba(148,213,240,.2)!important;border-radius:18px!important;background:linear-gradient(145deg,rgba(8,17,28,.92),rgba(4,10,17,.8))!important;box-shadow:0 20px 80px rgba(0,0,0,.45),0 0 45px rgba(121,232,255,.045),inset 0 1px rgba(255,255,255,.04)!important;padding:6px!important}.w-chat .composer input{font-size:14px!important;color:#e8f4fb!important}.w-chat .composer input::placeholder{color:#637a90!important}.w-chat .composer .voice,.w-chat .composer .send{width:48px!important;height:48px!important;border-radius:14px!important}.w-chat .composer .send{background:linear-gradient(145deg,rgba(121,232,255,.16),rgba(121,232,255,.05))!important;border-color:rgba(121,232,255,.25)!important}.w-chat .hint{display:none!important}.runtime-hidden{display:none!important}
+    .wulan-ambient{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}.wulan-ambient:before{content:"";position:absolute;left:50%;top:51%;width:min(68vw,1050px);height:min(48vw,650px);transform:translate(-50%,-50%);border:1px solid rgba(121,232,255,.08);border-radius:50%;box-shadow:0 0 90px rgba(52,149,204,.06),inset 0 0 90px rgba(52,149,204,.025)}.wulan-ambient:after{content:"";position:absolute;left:50%;top:51%;width:min(48vw,740px);height:min(34vw,500px);transform:translate(-50%,-50%);border:1px solid rgba(169,139,255,.055);border-radius:50%;animation:wulanBreath 8s ease-in-out infinite}.wulan-scan{position:absolute;left:50%;top:51%;width:min(52vw,820px);height:1px;transform:translate(-50%,-50%);background:linear-gradient(90deg,transparent,rgba(121,232,255,.15),transparent);filter:blur(.2px);animation:wulanScan 7s ease-in-out infinite}@keyframes wulanBreath{0%,100%{transform:translate(-50%,-50%) scale(.98);opacity:.45}50%{transform:translate(-50%,-50%) scale(1.03);opacity:1}}@keyframes wulanScan{0%,100%{opacity:.15;transform:translate(-50%,-50%) scaleX(.7)}50%{opacity:.65;transform:translate(-50%,-50%) scaleX(1)}}
+    @media(max-width:1250px){.w-panel{display:none!important}.w-rail{left:22px!important}.w-stage{inset:80px 80px 125px!important}.w-chat{width:min(760px,calc(100% - 170px))!important;min-width:0!important}}@media(max-width:720px){.w-top{left:14px!important;right:14px!important}.w-rail{display:none!important}.w-stage{inset:70px 12px 145px!important}.w-title{top:9%!important}.w-title h1{font-size:38px!important}.w-chat{width:calc(100% - 20px)!important;bottom:12px!important}.w-chat .message p{font-size:11px!important}.wulan-ambient:before{width:120vw;height:75vw}.wulan-ambient:after{width:90vw;height:55vw}}
+  `;
+  document.head.appendChild(style);
+  const ambient=document.createElement('div');ambient.className='wulan-ambient';ambient.innerHTML='<div class="wulan-scan"></div>';$('.wulan-world')?.prepend(ambient);
 
-  function draw() {
-    ctx.clearRect(0, 0, w, h);
-    const q = center(), e = energy(), size = S();
-    const bg = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, size * (.42 + e * .16));
-    bg.addColorStop(0, `rgba(62,150,255,${.045 + e * .07})`);
-    bg.addColorStop(.38, `rgba(68,92,180,${.02 + e * .025})`);
-    bg.addColorStop(1, 'transparent');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-    particles.forEach((p) => { p.a += .0007 * p.speed * (visualState.state === LIVING_STATES.THINKING ? 3.5 : 1); const pt = organicPoint(p.a, p.r + Math.sin(t * .34 + p.phase) * (.035 + e * .02), p.phase); const d = Math.hypot(pt.x - pointer.x, pt.y - pointer.y); const attraction = pointer.active ? Math.max(0, 1 - d / (size * (.3 + e * .18))) : 0; const pulse = (Math.sin(t * (.8 + p.speed) + p.phase) + 1) / 2; ctx.beginPath(); ctx.arc(pt.x, pt.y, p.size * (.65 + pulse * .75 + attraction * 1.7), 0, 6.283); ctx.fillStyle = `rgba(167,226,255,${.025 + e * .07 + attraction * .22})`; ctx.fill(); });
-    tendrils.forEach((th, i) => drawTendril(th, i, e));
-    sparks.forEach((s) => { s.a += .002 * s.speed * (visualState.state === LIVING_STATES.THINKING ? 2.8 : 1 + e); const pt = organicPoint(s.a, s.r + Math.sin(t * .8 + s.phase) * .035, s.phase); const glow = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 9 + e * 8); glow.addColorStop(0, `rgba(205,248,255,${.45 + e * .3})`); glow.addColorStop(1, 'transparent'); ctx.fillStyle = glow; ctx.fillRect(pt.x - 14, pt.y - 14, 28, 28); ctx.beginPath(); ctx.arc(pt.x, pt.y, 1.1 + e * 1.1, 0, 6.283); ctx.fillStyle = '#c9f6ff'; ctx.fill(); });
-    for (let layer = 0; layer < 5; layer++) { ctx.beginPath(); for (let i = 0; i <= 150; i++) { const a = i / 150 * 6.283; const base = .12 + layer * .055 + visualState.attention * .018; const wob = .028 * Math.sin(a * (3 + layer * .7) + t * (.5 + layer * .08)) + .017 * Math.sin(a * 8 - t * .32 + layer); const rr = base + wob; const x = q.x + Math.cos(a) * size * .55 * rr / .18; const y = q.y + Math.sin(a) * size * .38 * rr / .18; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.strokeStyle = `rgba(105,205,255,${.018 + e * .032 - layer * .002})`; ctx.lineWidth = .55; ctx.stroke(); }
-    const coreR = size * (.043 + e * .016); const glow = ctx.createRadialGradient(q.x, q.y, 0, q.x, q.y, coreR * 5); glow.addColorStop(0, `rgba(125,225,255,${.11 + e * .15})`); glow.addColorStop(.3, `rgba(95,143,255,${.055 + e * .08})`); glow.addColorStop(1, 'transparent'); ctx.fillStyle = glow; ctx.fillRect(q.x - coreR * 5, q.y - coreR * 5, coreR * 10, coreR * 10);
-    for (let k = 0; k < 4; k++) { ctx.beginPath(); for (let i = 0; i <= 90; i++) { const a = i / 90 * 6.283; const wob = Math.sin(a * (4 + k) + t * (.7 + k * .2)) * coreR * (.18 + e * .08) + Math.cos(a * 7 - t) * coreR * .1; const rr = coreR * (.55 + k * .16) + wob; const x = q.x + Math.cos(a + t * (.03 + k * .01)) * rr; const y = q.y + Math.sin(a - t * (.04 + k * .015)) * rr * (.62 + visualState.attention * .18); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.strokeStyle = `rgba(169,239,255,${.09 + k * .025 + e * .08})`; ctx.lineWidth = 1 - k * .13; ctx.stroke(); }
-    const dot = 2 + e * 2.8 + Math.min(pointer.velocity * .006, 2); ctx.beginPath(); ctx.arc(q.x + Math.sin(t * .8) * 2, q.y + Math.cos(t * .65) * 2, dot, 0, 6.283); ctx.fillStyle = '#e6fbff'; ctx.shadowBlur = 26 + e * 18; ctx.shadowColor = '#72e8ff'; ctx.fill(); ctx.shadowBlur = 0;
-    requestAnimationFrame(draw); t += .012;
-  }
-  draw();
+  let dpr=1,w=0,h=0,time=0;const nodes=Array.from({length:54},(_,i)=>({a:(Math.PI*2*i)/54+Math.random()*.08,r:.35+Math.random()*.62,s:.08+Math.random()*.24,p:Math.random()*Math.PI*2}));const pointer={x:0,y:0,active:false};
+  function resize(){if(!canvas||!ctx)return;dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=`${w}px`;canvas.style.height=`${h}px`;ctx.setTransform(dpr,0,0,dpr,0,0);pointer.x=w/2;pointer.y=h/2}addEventListener('resize',resize);resize();
+  function drawField(){if(!ctx)return;ctx.clearRect(0,0,w,h);const cx=w*.5+Math.sin(time*.12)*w*.006,cy=h*.51+Math.cos(time*.1)*h*.005,scale=Math.min(w,h),pulse=1+Math.sin(time*.75)*.018;const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,scale*.44);glow.addColorStop(0,'rgba(79,180,235,.09)');glow.addColorStop(.3,'rgba(67,111,191,.045)');glow.addColorStop(1,'transparent');ctx.fillStyle=glow;ctx.fillRect(0,0,w,h);for(let ring=0;ring<6;ring++){ctx.beginPath();const rx=scale*(.12+ring*.055)*pulse,ry=scale*(.075+ring*.036)*pulse;for(let i=0;i<=180;i++){const a=i/180*Math.PI*2,wob=Math.sin(a*(3+ring)+time*(.2+ring*.025))*.008*scale,x=cx+Math.cos(a)*(rx+wob),y=cy+Math.sin(a)*(ry+wob*.6);i?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle=`rgba(105,205,255,${.035-ring*.003})`;ctx.lineWidth=ring===0?1.1:.7;ctx.stroke()}nodes.forEach((n,i)=>{n.a+=.0007*n.s;const rr=scale*(.18+n.r*.24),x=cx+Math.cos(n.a)*rr,y=cy+Math.sin(n.a)*rr*.68,near=pointer.active?Math.max(0,1-Math.hypot(x-pointer.x,y-pointer.y)/(scale*.22)):0,alpha=.10+near*.38+(Math.sin(time*.9+n.p)+1)*.035;ctx.beginPath();ctx.arc(x,y,1.2+near*2.2,0,Math.PI*2);ctx.fillStyle=`rgba(168,235,255,${alpha})`;ctx.fill();if(i%5===0){ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.strokeStyle=`rgba(121,232,255,${.012+near*.055})`;ctx.lineWidth=.5;ctx.stroke()}});requestAnimationFrame(drawField);time+=.012}drawField();
 
-  presence.classList.add('canvas-presence');
-  const copy = { idle:["I'm here.",'quiet · aware · waiting'], listening:["I'm listening.",'with you · right now'], thinking:["Let me think.",'connecting what I know'], remembering:["I remember.",'looking through memory'], acting:["On it.",'working on your request'], learning:["I'm learning.",'feedback becomes experience'], error:["Something broke.",'recovering safely'] };
-  living.subscribe((next) => { visualState = next; const words = copy[next.state] ?? copy.idle; presenceText.textContent = next.state.toUpperCase(); activityState.textContent = next.state.toUpperCase(); activityLine.textContent = next.activity; headline.textContent = words[0]; subline.textContent = words[1]; presence.classList.toggle('active', next.state === 'listening' || next.state === 'acting'); presence.classList.toggle('thinking', next.state === 'thinking' || next.state === 'learning'); });
-
-  function addMessage(who, text) { const el = document.createElement('div'); el.className = `message ${who}`; const name = document.createElement('span'); name.className = 'message-name'; name.textContent = who === 'user' ? 'YOU' : 'WULAN'; const p = document.createElement('p'); p.textContent = text; el.append(name, p); messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
-  function memoryCount() { return core.memory.list({ limit: 5000 }).length; }
-  function save() { persistence?.saveCore?.(core); }
-  function rememberConversation(text) { const entry = core.remember({content:text,type:'experience',source:'conversation',importance:.35,tags:['conversation','session']}); memoryLabel.querySelector('b').textContent = String(memoryCount()); memoryHint.textContent = `memory · ${memoryCount()} stored`; save(); return entry; }
-  function localReply(text) { const s = text.toLowerCase(); if (/hello|hi|hey|bro/.test(s)) return "Hey. I'm right here. What are we building?"; if (/who are you|what are you/.test(s)) return "I'm Wulan — the personal layer we're building around your tools, memory and future AI providers."; if (/remember|memory/.test(s)) return memoryCount() ? `I have ${memoryCount()} private memories stored on this device.` : "Memory is ready. Tell me what you want me to keep."; if (/sentinel/.test(s)) return "Sentinel is registered. Wulan can inspect its state when the integration is invoked."; if (/strategy.?lab|strategy labs/.test(s)) return "Strategy Lab is registered. Wulan can inspect its research state when the integration is invoked."; if (/learn|learning/.test(s)) return "Learning is recording explicit feedback and experience; later those signals can influence routing and behavior."; if (/project|build/.test(s)) return "I'm ready. Give me the next thing and I'll keep it in context."; return `I heard you: “${text}”. My local core is online, and I will use the configured provider when it is available.`; }
-
-  async function sendMessage(text) {
-    text = text.trim(); if (!text) return;
-    addMessage('user', text); core.events.emit(WULAN_EVENTS.USER_MESSAGE, { text }); living.transition(LIVING_STATES.THINKING, { reason: 'user_message', activity: 'connecting your message to context' }); rememberConversation(text); await new Promise(r => setTimeout(r, 280 + Math.random() * 420));
-    let reply; try { reply = await core.ai.generate({ messages:[{role:'user',content:text}], system:'You are Wulan, a private personal AI OS. Be concise, warm and honest about what you can actually do.' }); } catch { reply = localReply(text); }
-    living.transition(LIVING_STATES.ACTING, { reason:'response_ready', activity:'responding to you' }); await new Promise(r => setTimeout(r,140)); addMessage('wulan', typeof reply === 'string' ? reply : (reply?.text || reply?.content || localReply(text))); core.recordFeedback({outcome:'accepted',context:text,candidatePreference:null,source:'conversation',confidence:.35}); living.transition(LIVING_STATES.LEARNING, {reason:'conversation_feedback',activity:'keeping the useful signal'}); save(); living.decayToIdle(900); input.focus();
-  }
-  composer.addEventListener('submit', e => { e.preventDefault(); const text = input.value; input.value = ''; sendMessage(text); });
-  presence.addEventListener('click', () => { living.transition(LIVING_STATES.LISTENING, { reason:'presence_interaction', focus:'you', activity:'listening to you' }); input.focus(); living.decayToIdle(3000); });
-  document.addEventListener('pointermove', e => { const dx=e.clientX-pointer.x,dy=e.clientY-pointer.y; pointer.velocity=Math.hypot(dx,dy); pointer.x=e.clientX; pointer.y=e.clientY; pointer.active=true; if(!lastPointer||pointer.velocity>45)living.pulse({attention:Math.min(1,living.attention+.025),focus:'environment'}); lastPointer={x:e.clientX,y:e.clientY}; });
-  document.addEventListener('pointerleave', () => { pointer.active=false; pointer.velocity=0; });
-  voice.addEventListener('click', () => { const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR){addMessage('wulan','Voice input is not available in this browser. Text is ready.');return;} const rec=new SR(); rec.lang=navigator.language||'en-IN'; rec.interimResults=false; living.transition(LIVING_STATES.LISTENING,{reason:'voice_input',activity:'listening to your voice'}); rec.onresult=e=>{input.value=e.results[0][0].transcript;const text=input.value;input.value='';sendMessage(text);}; rec.onerror=()=>living.transition(LIVING_STATES.IDLE,{reason:'voice_error',activity:'Listening for you.'}); rec.onend=()=>{if(living.state===LIVING_STATES.LISTENING)living.transition(LIVING_STATES.IDLE,{reason:'voice_end',activity:'Listening for you.'});}; rec.start(); });
-  document.querySelectorAll('.w-nav').forEach(btn => btn.addEventListener('click', () => { const a=btn.dataset.action; document.querySelectorAll('.w-nav').forEach(n=>n.classList.toggle('active',n===btn)); const lines={memory:`Memory is awake. ${memoryCount()} private memories are stored locally.`,agents:`${core.state.agents.size} agents are registered and available in Wulan's runtime.`,projects:`${core.world.listProjects().length} projects are present in the local world model.`,systems:`${core.state.integrations.size} integrations are registered: ${[...core.state.integrations.values()].map(x=>x.name).join(', ')}.`}; addMessage('wulan',lines[a]??'World context updated.'); living.transition(LIVING_STATES.REMEMBERING,{reason:`open_${a}`,focus:a,activity:`${a} context surfaced`}); living.decayToIdle(1600); }));
-  core.events.on(WULAN_EVENTS.SYSTEM_READY, () => { activityLine.textContent='Core online. I am ready.'; providerHint.textContent=core.ai.listProviders().length?'AI gateway · connected':'AI gateway · waiting for provider'; });
-  core.boot();
-  memoryLabel.querySelector('b').textContent=String(memoryCount()); agentsLabel.querySelector('b').textContent=String(core.state.agents.size); memoryHint.textContent='memory · ready';
-  setInterval(save,15000);
-  const clock=$('#clock'); const tick=()=>clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); tick(); setInterval(tick,1000);
+  function addMessage(who,text){if(!messages)return;const el=document.createElement('div');el.className=`message ${who}`;const name=document.createElement('span');name.className='message-name';name.textContent=who==='user'?'YOU':'WULAN';const p=document.createElement('p');p.textContent=text;el.append(name,p);messages.appendChild(el);messages.scrollTop=messages.scrollHeight}
+  function memoryCount(){try{return core?.memory?.list?.({limit:5000})?.length||0}catch{return 0}}function save(){try{core?.persistence?.saveCore?.(core)}catch{}}
+  function localReply(text){const s=text.toLowerCase();if(/^(hi|hey|hello|yo|bro)\b/.test(s))return "Hey. I'm here. What are we building?";if(/who are you|what are you/.test(s))return "I'm Wulan — the personal intelligence layer we're building around your tools, memory and work.";if(/memory|remember/.test(s))return memoryCount()?`I have ${memoryCount()} memories stored locally.`:"Memory is ready. Tell me what you want me to remember.";if(/sentinel/.test(s))return "Sentinel is connected to the world model. I can work with its registered capabilities when they're available.";if(/strategy.?lab/.test(s))return "Strategy Lab is registered in my world model. We can build on it from here.";return `I heard you: “${text}”. My local runtime is online.`}
+  async function withTimeout(promise,ms){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('AI response timeout')),ms)})])}finally{clearTimeout(timer)}}
+  async function sendMessage(raw){const text=String(raw||'').trim();if(!text||!input)return;input.value='';addMessage('user',text);try{core?.events?.emit?.(WULAN_EVENTS.USER_MESSAGE,{text})}catch{}try{core?.remember?.({content:text,type:'experience',source:'conversation',importance:.35,tags:['conversation','session']});save()}catch{}if(memoryCountEl)memoryCountEl.textContent=String(memoryCount());if(memoryHint)memoryHint.textContent=`memory · ${memoryCount()} stored`;let reply;try{const history=[...messages.querySelectorAll('.message')].slice(-12).map(el=>({role:el.classList.contains('user')?'user':'assistant',content:el.querySelector('p')?.textContent||''}));const generated=core?.ai?.generate?await withTimeout(core.ai.generate({messages:history,system:'You are Wulan, a private personal AI OS. Speak naturally, confidently and concisely. Never expose internal chain-of-thought or internal state labels. If you cannot perform an action, say so plainly and offer the next useful step.'}),4000):null;reply=typeof generated==='string'?generated:(generated?.text||generated?.content||null)}catch(error){console.warn('[Wulan] provider unavailable; using local response',error);reply=localReply(text)}addMessage('wulan',reply||localReply(text));try{core?.recordFeedback?.({outcome:'accepted',context:text,candidatePreference:null,source:'conversation',confidence:.35});save()}catch{}input.focus()}
+  composer?.addEventListener('submit',e=>{e.preventDefault();sendMessage(input?.value)});$('#nova-send')?.addEventListener('click',e=>{e.preventDefault();sendMessage(input?.value)});input?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();composer?.requestSubmit?.()}});
+  voice?.addEventListener('click',()=>{const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){addMessage('wulan','Voice input is not available in this browser. Text is ready.');return}const rec=new SR();rec.lang=navigator.language||'en-IN';rec.interimResults=false;rec.maxAlternatives=1;rec.onresult=e=>sendMessage(e.results?.[0]?.[0]?.transcript||'');rec.onerror=()=>{};try{rec.start()}catch{}});
+  document.querySelectorAll('.w-nav').forEach(btn=>btn.addEventListener('click',()=>{const a=btn.dataset.action;document.querySelectorAll('.w-nav').forEach(n=>n.classList.toggle('active',n===btn));const lines={memory:`Memory is ready. ${memoryCount()} memories are stored locally.`,agents:`${core?.state?.agents?.size||0} agents are registered.`,projects:`${core?.world?.listProjects?.().length||0} projects are present.`,systems:`${core?.state?.integrations?.size||0} integrations are registered.`};addMessage('wulan',lines[a]||'Done.') }));
+  document.addEventListener('pointermove',e=>{pointer.x=e.clientX;pointer.y=e.clientY;pointer.active=true});document.addEventListener('pointerleave',()=>pointer.active=false);
+  async function boot(){if(!core){if(providerState)providerState.textContent='LOCAL';if(providerHint)providerHint.textContent='LOCAL MODE';addMessage('wulan','I’m online in local mode. The core could not initialize fully.');return}try{core.events?.on?.(WULAN_EVENTS.SYSTEM_READY,()=>{const providers=core.ai?.listProviders?.()||[];if(providerState)providerState.textContent=providers.length?'ONLINE':'LOCAL';if(providerHint)providerHint.textContent=providers.length?'AI GATEWAY · ONLINE':'LOCAL CORE · ONLINE'});await Promise.resolve(core.boot?.())}catch(error){console.error('[Wulan] boot error',error);if(providerState)providerState.textContent='LOCAL';if(providerHint)providerHint.textContent='LOCAL CORE · ONLINE'}if(memoryCountEl)memoryCountEl.textContent=String(memoryCount());if(memoryHint)memoryHint.textContent=memoryCount()?`memory · ${memoryCount()} stored`:'memory · ready';if(providerState&&core.ai?.listProviders)providerState.textContent=(core.ai.listProviders()||[]).length?'ONLINE':'LOCAL'}
+  boot();if(clock){const tick=()=>clock.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});tick();setInterval(tick,1000)}
 })();

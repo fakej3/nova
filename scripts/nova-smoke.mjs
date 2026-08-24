@@ -6,14 +6,15 @@ const persistence = {
   load: () => persisted,
   save: ({ core, memories = [] } = {}) => {
     persisted = core ? {
-      version: 4,
+      version: 5,
       savedAt: new Date().toISOString(),
       memories: core.memory.list({ limit: 5000 }),
       learning: core.learning.recent(5000),
       neural: core.neural.exportState(),
       semantic: core.semantic.exportState(),
       tasks: core.cognition?.orchestrator?.recent(100) ?? [],
-    } : { version: 4, savedAt: new Date().toISOString(), memories };
+      teamRuns: core.agentSupervisor?.recentTeams?.(100) ?? [],
+    } : { version: 5, savedAt: new Date().toISOString(), memories };
     return true;
   },
 };
@@ -77,6 +78,18 @@ let badTeam = false;
 try { await core.agentSupervisor.coordinate({ name: 'bad team', tasks: [{ id: 'a', agentId: 'pixel', capabilityId: 'memory.search', input: {} }] }); } catch (error) { badTeam = String(error?.message).includes('AGENT_CAPABILITY_DENIED'); }
 assert(badTeam, 'team coordination did not reject an unauthorized agent capability');
 
+let flakyAttempts = 0;
+core.capabilities.register({ id: 'smoke.flaky', name: 'Smoke Flaky Capability', risk: 'write', permissions: ['agent:write'], execute: async () => { flakyAttempts += 1; if (flakyAttempts === 1) throw new Error('TRANSIENT_SMOKE_FAILURE'); return { ok: true, attempts: flakyAttempts }; } });
+core.agentRuntime.configure('atlas', { capabilities: ['memory.remember', 'smoke.flaky'] });
+const interruptedTeam = await core.agentSupervisor.coordinate({ name: 'durable team recovery', tasks: [{ id: 'recover', agentId: 'atlas', capabilityId: 'smoke.flaky', input: {} }] });
+assert(interruptedTeam.status === 'partial', `durable recovery fixture did not fail first attempt: ${interruptedTeam.status}`);
+assert(interruptedTeam.tasks[0].status === 'failed', 'failed team step was not checkpointed');
+assert(persisted?.teamRuns?.some(run => run.id === interruptedTeam.id), 'team checkpoint was not persisted');
+const resumedTeam = await core.agentSupervisor.resume(interruptedTeam.id);
+assert(resumedTeam.status === 'completed', `team resume ended in ${resumedTeam.status}`);
+assert(resumedTeam.tasks[0].attempts === 2, 'team resume did not retry the failed step exactly once');
+assert(resumedTeam.tasks[0].status === 'success', 'team resume did not complete the failed step');
+
 const remembered = core.remember({ content: 'Nova smoke test memory survives persistence.', type: 'fact', importance: 0.8, tags: ['smoke-test'] });
 assert(remembered?.id, 'memory creation failed');
 assert(core.searchMemory('smoke test memory').length > 0, 'memory retrieval failed');
@@ -110,7 +123,8 @@ assert(core.memory.list({ limit: 100 }).some(entry => entry.type === 'experience
 const restored = createWulanCore({ persistence });
 assert(restored.searchMemory('smoke test memory').length > 0, 'persisted memory did not restore into a new core');
 assert(restored.cognition.orchestrator.get(task.id)?.status === 'completed', 'completed task state did not restore into a new core');
+assert(restored.agentSupervisor.getTeam(resumedTeam.id)?.status === 'completed', 'completed team state did not restore into a new core');
 const restoredHealth = restored.health?.check?.(['memory', 'persistence']);
 assert(restoredHealth?.overall !== 'failed', 'restored core has a failed memory/persistence health check');
 
-console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), supervisor: core.agentSupervisor.status(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, team: team.status, cognition: cognition.status, dispatchedAgent: dispatched.agentId, experienceRecorded: true }, null, 2));
+console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, agents: core.agentRuntime.stats(), supervisor: core.agentSupervisor.status(), neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, team: team.status, teamRecovery: resumedTeam.status, cognition: cognition.status, dispatchedAgent: dispatched.agentId, experienceRecorded: true }, null, 2));

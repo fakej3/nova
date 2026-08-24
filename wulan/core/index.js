@@ -16,6 +16,7 @@ import { registerStrategyLab } from './strategy-lab.js';
 import { WulanPersistence, hydrateMemoryStore, restorePersistentState } from './persistence.js';
 import { createRuntimeHealth } from './runtime-health.js';
 import { WulanAgentRuntime } from './agent-runtime.js';
+import { WulanAgentSupervisor } from './agent-supervisor.js';
 
 export function createWulanCore({persistence}={}){
   const events=new WulanEventBus();
@@ -58,9 +59,12 @@ export function createWulanCore({persistence}={}){
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.agentRuntime=new WulanAgentRuntime(core);
+  core.agentSupervisor=new WulanAgentSupervisor(core);
   core.capabilities.register({id:'agent.list',name:'List Agents',description:'Inspect registered Wulan agents and their runtime state.',risk:'read',permissions:['agent:read'],execute:async()=>core.agentRuntime.list()});
   core.capabilities.register({id:'agent.status',name:'Agent Status',description:'Inspect one registered agent and recent assignments.',risk:'read',permissions:['agent:read'],inputSchema:{agentId:'string'},execute:async({agentId}={})=>{const agent=core.agentRuntime.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);return{agent,runs:core.agentRuntime.recent(20).filter(run=>run.agentId===agentId)};}});
   core.capabilities.register({id:'agent.assign',name:'Assign Agent',description:'Assign a serializable task graph to an agent that has every requested capability.',risk:'write',permissions:['agent:write'],inputSchema:{agentId:'string',definition:'object'},execute:async({agentId,definition}={},context={})=>core.agentRuntime.assign(agentId,definition,{approvedCapabilities:context.approvedCapabilities??[]})});
+  core.capabilities.register({id:'agent.dispatch',name:'Dispatch Agent',description:'Choose the best capable agent for a serializable task graph and execute it through the agent runtime.',risk:'write',permissions:['agent:write'],inputSchema:{definition:'object'},execute:async({definition}={},context={})=>core.agentSupervisor.dispatch(definition,{approvedCapabilities:context.approvedCapabilities??[]})});
+  core.capabilities.register({id:'agent.supervisor_status',name:'Agent Supervisor Status',description:'Inspect agent availability, capabilities and recent runtime load.',risk:'read',permissions:['agent:read'],execute:async()=>core.agentSupervisor.status()});
   core.cognize=(input,options={})=>core.cognition.run(input,options);
   core.changeTrail=createChangeTrail({memory,remember:core.remember,events});
   events.on('world.change_assessed',event=>{if(!event.payload?.shouldReason)return;const {level,source,subject,totalChanges,fields}=event.payload;void core.cognize(`World change detected (${level}) for ${subject ?? source ?? 'unknown'}: ${totalChanges} changed field(s). Fields: ${fields.join(', ')}`,{execute:false,context:{trigger:'world-change',severity:level,source,subject}});});

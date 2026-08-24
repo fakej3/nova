@@ -51,8 +51,10 @@ jobs:
             wulan/core/persistence.js \
             wulan/core/runtime-health.js \
             wulan/core/team-context.js \
+            wulan/core/agent-deliberator.js \
             scripts/nova-smoke.mjs \
-            scripts/nova-team-context-smoke.mjs; do
+            scripts/nova-team-context-smoke.mjs \
+            scripts/nova-deliberation-smoke.mjs; do
             test -f "$file"
           done
           echo 'Critical Nova files present.'
@@ -62,3 +64,6 @@ jobs:
 
       - name: Run shared team context smoke test
         run: node scripts/nova-team-context-smoke.mjs
+
+      - name: Run agent deliberation smoke test
+        run: node scripts/nova-deliberation-smoke.mjs

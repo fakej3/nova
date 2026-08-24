@@ -12,7 +12,11 @@ const resolveInput=(value,results)=>{
 };
 
 export class WulanAgentSupervisor{
-  constructor(core,{maxCandidates=20,maxTeamSteps=12}={}){if(!core)throw new TypeError('Agent supervisor requires Wulan core');this.core=core;this.maxCandidates=maxCandidates;this.maxTeamSteps=maxTeamSteps;}
+  constructor(core,{maxCandidates=20,maxTeamSteps=12}={}){
+    if(!core)throw new TypeError('Agent supervisor requires Wulan core');
+    this.core=core;this.maxCandidates=maxCandidates;this.maxTeamSteps=maxTeamSteps;
+    core.capabilities?.register?.({id:'agent.coordinate',name:'Coordinate Agent Team',description:'Execute a serializable dependency graph across multiple capable Wulan agents, passing successful task results to dependent tasks.',risk:'write',permissions:['agent:write'],inputSchema:{definition:'object'},execute:async({definition}={},context={})=>this.coordinate(definition,{approvedCapabilities:context.approvedCapabilities??[]})});
+  }
   candidates(definition){
     const tasks=Array.isArray(definition?.tasks)?definition.tasks:[];
     if(!tasks.length)throw new TypeError('Dispatch requires at least one task');
@@ -61,12 +65,12 @@ export class WulanAgentSupervisor{
       if(signal?.aborted)throw new Error('TEAM_COORDINATION_CANCELLED');
       for(const task of tasks){
         const current=state.get(task.id);
-        if(current.status==='success'||current.status==='failed'||current.status==='blocked')continue;
+        if(['success','failed','blocked'].includes(current.status))continue;
         const dependencies=task.dependsOn??[];
         if(dependencies.some(id=>['failed','blocked'].includes(state.get(id)?.status))){current.status='blocked';current.error='DEPENDENCY_NOT_SUCCESSFUL';progress=true;continue;}
         if(dependencies.some(id=>state.get(id)?.status!=='success'))continue;
-        let chosen;
-        try{chosen=task.agentId?{agent:this.core.agentRuntime.get(task.agentId),score:null}:this.choose({tasks:[task]});
+        try{
+          const chosen=task.agentId?{agent:this.core.agentRuntime.get(task.agentId),score:null}:this.choose({tasks:[task]});
           const agent=chosen.agent;
           if(!normalize(agent.capabilities).includes(String(task.capabilityId)))throw new Error(`AGENT_CAPABILITY_DENIED: ${task.capabilityId}`);
           const resolvedInput=resolveInput(task.input??{},results);

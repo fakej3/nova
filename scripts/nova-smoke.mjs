@@ -4,28 +4,24 @@ let persisted = null;
 const persistence = {
   available: () => true,
   load: () => persisted,
-  save: ({ memories = [] } = {}) => {
-    persisted = { version: 1, savedAt: new Date().toISOString(), memories };
+  save: ({ core, memories = [] } = {}) => {
+    persisted = core ? {
+      version: 4,
+      savedAt: new Date().toISOString(),
+      memories: core.memory.list({ limit: 5000 }),
+      learning: core.learning.recent(5000),
+      neural: core.neural.exportState(),
+      semantic: core.semantic.exportState(),
+      tasks: core.cognition?.orchestrator?.recent(100) ?? [],
+    } : { version: 4, savedAt: new Date().toISOString(), memories };
     return true;
   },
 };
-
-const fail = message => {
-  throw new Error(`[nova-smoke] ${message}`);
-};
-const assert = (condition, message) => {
-  if (!condition) fail(message);
-};
+const fail = message => { throw new Error(`[nova-smoke] ${message}`); };
+const assert = (condition, message) => { if (!condition) fail(message); };
 
 const core = createWulanCore({ persistence });
-for (const [id, name, role] of [
-  ['atlas', 'ATLAS', 'research'],
-  ['leon', 'LEON', 'engineering'],
-  ['oracle', 'ORACLE', 'analysis'],
-  ['pixel', 'PIXEL', 'interface'],
-]) {
-  core.registerAgent({ id, name, role });
-}
+for (const [id, name, role] of [['atlas', 'ATLAS', 'research'], ['leon', 'LEON', 'engineering'], ['oracle', 'ORACLE', 'analysis'], ['pixel', 'PIXEL', 'interface']]) core.registerAgent({ id, name, role });
 core.registerIntegration({ id: 'smoke', name: 'Smoke Integration', kind: 'test' });
 core.boot();
 
@@ -34,12 +30,7 @@ assert(health?.overall === 'healthy', `runtime health is ${health?.overall ?? 'm
 assert(core.neural.stats().neurons >= 5, 'baseline neural topology was not created');
 assert(core.neural.stats().synapses >= 8, 'baseline neural topology has too few synapses');
 
-const remembered = core.remember({
-  content: 'Nova smoke test memory survives persistence.',
-  type: 'fact',
-  importance: 0.8,
-  tags: ['smoke-test'],
-});
+const remembered = core.remember({ content: 'Nova smoke test memory survives persistence.', type: 'fact', importance: 0.8, tags: ['smoke-test'] });
 assert(remembered?.id, 'memory creation failed');
 assert(core.searchMemory('smoke test memory').length > 0, 'memory retrieval failed');
 assert(persisted?.memories?.some(entry => entry.id === remembered.id), 'memory was not persisted');
@@ -54,6 +45,15 @@ const task = await core.cognition.executeTaskGraph({
 assert(task?.status === 'completed', `task orchestration ended in ${task?.status ?? 'missing'}`);
 assert(task.tasks?.every(step => step.status === 'success'), 'not every task graph step succeeded');
 assert(task.results?.search?.result?.lexical?.length > 0, 'dependent search task returned no memory');
+assert(persisted?.tasks?.some(run => run.id === task.id), 'completed task run was not persisted');
+
+core.capabilities.register({ id: 'smoke.approval', name: 'Smoke Approval', risk: 'write', requiresApproval: true, execute: async () => ({ approved: true }) });
+const blocked = await core.cognition.executeTaskGraph({ name: 'smoke recovery', tasks: [{ id: 'approval', capabilityId: 'smoke.approval', input: {} }] });
+assert(blocked.status === 'partial', `approval gate did not block: ${blocked.status}`);
+assert(blocked.tasks[0].status === 'blocked', 'approval-gated task was not blocked');
+const resumed = await core.cognition.orchestrator.resume(blocked.id, { approvedCapabilities: ['smoke.approval'] });
+assert(resumed.status === 'completed', `task recovery ended in ${resumed.status}`);
+assert(resumed.tasks[0].status === 'success', 'blocked task did not resume successfully');
 
 const cognition = await core.cognize('what is the system status?', { execute: false });
 assert(cognition?.status === 'planned' || cognition?.status === 'completed', `cognition ended in ${cognition?.status ?? 'missing'}`);
@@ -62,18 +62,8 @@ assert(core.memory.list({ limit: 100 }).some(entry => entry.type === 'experience
 
 const restored = createWulanCore({ persistence });
 assert(restored.searchMemory('smoke test memory').length > 0, 'persisted memory did not restore into a new core');
-
+assert(restored.cognition.orchestrator.get(task.id)?.status === 'completed', 'completed task state did not restore into a new core');
 const restoredHealth = restored.health?.check?.(['memory', 'persistence']);
 assert(restoredHealth?.overall !== 'failed', 'restored core has a failed memory/persistence health check');
 
-console.log(JSON.stringify({
-  ok: true,
-  health: health.overall,
-  restoredHealth: restoredHealth.overall,
-  neurons: core.neural.stats().neurons,
-  synapses: core.neural.stats().synapses,
-  memories: core.memory.list({ limit: 100 }).length,
-  task: task.status,
-  cognition: cognition.status,
-  experienceRecorded: true,
-}, null, 2));
+console.log(JSON.stringify({ ok: true, health: health.overall, restoredHealth: restoredHealth.overall, neurons: core.neural.stats().neurons, synapses: core.neural.stats().synapses, memories: core.memory.list({ limit: 100 }).length, task: task.status, recovery: resumed.status, cognition: cognition.status, experienceRecorded: true }, null, 2));

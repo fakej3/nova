@@ -17,6 +17,7 @@ import { WulanPersistence, hydrateMemoryStore, restorePersistentState } from './
 import { createRuntimeHealth } from './runtime-health.js';
 import { WulanAgentRuntime } from './agent-runtime.js';
 import { WulanAgentSupervisor } from './agent-supervisor.js';
+import { WulanTeamContext } from './team-context.js';
 
 export function createWulanCore({persistence}={}){
   const events=new WulanEventBus();
@@ -27,9 +28,10 @@ export function createWulanCore({persistence}={}){
   const significance=connectChangeSignificance({events});
   const memory=new WulanMemoryStore(); const learning=new WulanLearningStore(); const neural=new WulanNeuralSubstrate(); const semantic=new WulanSemanticMemory(); const ai=new WulanAIGateway();
   const persistenceStore=persistence??new WulanPersistence();
+  const teamContext=new WulanTeamContext({persistence:persistenceStore});
   const restoredMemoryCount=hydrateMemoryStore(memory,persistenceStore);
   const state={status:'booting',agents:new Map(),integrations:new Map()};
-  const core={events,world,observationIngestor,reconciliation,significance,capabilities,memory,learning,neural,semantic,ai,persistence:persistenceStore,state,
+  const core={events,world,observationIngestor,reconciliation,significance,capabilities,memory,learning,neural,semantic,ai,persistence:persistenceStore,teamContext,state,
     registerAgent(agent){if(!agent?.id||!agent?.name)throw new TypeError('Agent requires id and name');if(state.agents.has(agent.id))throw new Error(`Agent already registered: ${agent.id}`);const registered=state.agents.set(agent.id,{status:'idle',capabilities:[],...agent}).get(agent.id);neural.ensureNeuron({id:`agent:${agent.id}`,label:agent.name,type:'agent',strength:.5,tags:['agent',agent.role??'general']});return registered;},
     registerIntegration(integration){if(!integration?.id||!integration?.name)throw new TypeError('Integration requires id and name');if(state.integrations.has(integration.id))throw new Error(`Integration already registered: ${integration.id}`);const registered=state.integrations.set(integration.id,{status:'disconnected',...integration}).get(integration.id);if(integration.id==='sentinel')world.upsertProject({id:'sentinel',name:'Sentinel',repository:integration.repository??'fakej3/Sentinel',branch:integration.branch??'main',capabilities:['github.inspect','sentinel.inspect']});return registered;},
     startAgent(agentId,meta={}){const agent=state.agents.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);if(agent.status==='active')return agent;agent.status='active';events.emit(WULAN_EVENTS.AGENT_STARTED,{agentId,...meta});return agent;},
@@ -59,12 +61,13 @@ export function createWulanCore({persistence}={}){
   registerStrategyLab(core);
   core.cognition=new WulanCognitionLoop(core);
   core.agentRuntime=new WulanAgentRuntime(core);
-  core.agentSupervisor=new WulanAgentSupervisor(core);
+  core.agentSupervisor=new WulanAgentSupervisor(core,{teamContext});
   core.capabilities.register({id:'agent.list',name:'List Agents',description:'Inspect registered Wulan agents and their runtime state.',risk:'read',permissions:['agent:read'],execute:async()=>core.agentRuntime.list()});
   core.capabilities.register({id:'agent.status',name:'Agent Status',description:'Inspect one registered agent and recent assignments.',risk:'read',permissions:['agent:read'],inputSchema:{agentId:'string'},execute:async({agentId}={})=>{const agent=core.agentRuntime.get(agentId);if(!agent)throw new Error(`Unknown agent: ${agentId}`);return{agent,runs:core.agentRuntime.recent(20).filter(run=>run.agentId===agentId)};}});
   core.capabilities.register({id:'agent.assign',name:'Assign Agent',description:'Assign a serializable task graph to an agent that has every requested capability.',risk:'write',permissions:['agent:write'],inputSchema:{agentId:'string',definition:'object'},execute:async({agentId,definition}={},context={})=>core.agentRuntime.assign(agentId,definition,{approvedCapabilities:context.approvedCapabilities??[]})});
   core.capabilities.register({id:'agent.dispatch',name:'Dispatch Agent',description:'Choose the best capable agent for a serializable task graph and execute it through the agent runtime.',risk:'write',permissions:['agent:write'],inputSchema:{definition:'object'},execute:async({definition}={},context={})=>core.agentSupervisor.dispatch(definition,{approvedCapabilities:context.approvedCapabilities??[]})});
   core.capabilities.register({id:'agent.supervisor_status',name:'Agent Supervisor Status',description:'Inspect agent availability, capabilities and recent runtime load.',risk:'read',permissions:['agent:read'],execute:async()=>core.agentSupervisor.status()});
+  core.capabilities.register({id:'agent.team.context',name:'Team Context',description:'Read or write shared facts, decisions, warnings and artifacts for a multi-agent team.',risk:'write',permissions:['agent:read','agent:write'],inputSchema:{teamId:'string',action:'string',kind:'string?',value:'object?'},execute:async({teamId,action='read',kind='facts',value}={})=>core.agentSupervisor.context(teamId,action,kind,value)});
   core.cognize=(input,options={})=>core.cognition.run(input,options);
   core.changeTrail=createChangeTrail({memory,remember:core.remember,events});
   events.on('world.change_assessed',event=>{if(!event.payload?.shouldReason)return;const {level,source,subject,totalChanges,fields}=event.payload;void core.cognize(`World change detected (${level}) for ${subject ?? source ?? 'unknown'}: ${totalChanges} changed field(s). Fields: ${fields.join(', ')}`,{execute:false,context:{trigger:'world-change',severity:level,source,subject}});});
